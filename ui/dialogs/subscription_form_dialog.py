@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QDate
 from ui.message_box import ask
-
+from services import audit_service
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import load_config, get_plan_label
 from services import subscription_service
@@ -117,7 +117,14 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
             if not ask(self, t("dlg.sub.zero_title"), t("dlg.sub.zero_msg")):
                 return
 
+
         self.new_subscription_id = subscription_service.activate(
             self.player_id, plan_type, start, self.activated_by, amount, payment_date,
+        )
+
+        audit_service.subscription_activated(
+            subscription_id=self.new_subscription_id,
+            player_id=self.player_id,
+            plan_type=plan_type,
         )
         self.accept()

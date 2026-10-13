@@ -20,19 +20,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from ui.screens.scan_screen import ScanScreen
 from ui.screens.player_list_screen import PlayerListScreen
 from ui.screens.users_screen import UsersScreen
+from ui.screens.audit_screen import AuditScreen
 from ui.shell import TopBar, Sidebar, Workspace
 from ui.theme import theme
 from ui.i18n import t
 from app_state import app as app_state
-
-
-# Nav registration: (key, label_key, title_key, icon, required_permission)
-# Required_permission=None means "always shown".
-NAV_ITEMS = [
-    ("nav.check_in",       "nav.check_in",       "checkin.title",  "▶",  "checkin"),
-    ("nav.manage_players", "nav.manage_players", "players.title",  "▤",  "players.view"),
-    ("nav.users",          "nav.users",          "users.title",    "👥", "users.manage"),
-]
 
 
 _current_window: "MainWindow" = None
@@ -56,7 +48,7 @@ class MainWindow(QMainWindow):
 
         # Map of nav_key -> page widget, only for pages the user can see.
         self._pages_by_nav_key = {}
-        # Map of workspace stack index -> nav_key, for sidebar→workspace dispatch.
+        # Ordered list of nav keys the user actually sees, for sidebar dispatch.
         self._nav_keys_in_order = []
 
         self._build_ui()
@@ -80,10 +72,12 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.workspace = Workspace()
 
-        # Register pages (only those the user has permission for)
-        self._register_page("nav.check_in", "checkin.title", ScanScreen(), "checkin")
+        # Register pages (only those the user has permission for).
+        # Order here determines sidebar order.
+        self._register_page("nav.check_in",       "checkin.title", ScanScreen(),       "checkin")
         self._register_page("nav.manage_players", "players.title", PlayerListScreen(), "players.view")
-        self._register_page("nav.users", "users.title", UsersScreen(), "users.manage")
+        self._register_page("nav.users",          "users.title",   UsersScreen(),     "users.manage")
+        self._register_page("nav.audit",          "audit.title",   AuditScreen(),     "audit.view")
 
         # One signal drives everything.
         self.sidebar.on_change(self._on_nav_changed)
@@ -107,11 +101,10 @@ class MainWindow(QMainWindow):
         sidebar. Keeps both lists in lockstep, so sidebar index == workspace
         index always holds among *visible* items.
         """
-        # Add the page to the workspace regardless — the sidebar controls
-        # visibility. But if the user can't access it, we don't want the
-        # sidebar to show it, so we only add the sidebar item conditionally.
         glyph = self._glyph_for(nav_key)
-        sidebar_index = self.sidebar.add_item(nav_key, glyph, required_permission=permission)
+        sidebar_index = self.sidebar.add_item(
+            nav_key, glyph, required_permission=permission
+        )
 
         if sidebar_index < 0:
             # Permission denied — don't register the page at all
@@ -127,6 +120,7 @@ class MainWindow(QMainWindow):
             "nav.check_in":       "▶",
             "nav.manage_players": "▤",
             "nav.users":          "👥",
+            "nav.audit":          "🗒",
         }.get(nav_key, "•")
 
     def _on_nav_changed(self, index: int):
@@ -148,14 +142,12 @@ class MainWindow(QMainWindow):
         app_state.clear()
         self.close()
 
-        # Show login again
         from ui.screens.login_screen import LoginDialog
         login = LoginDialog()
         if login.exec() != QDialog.DialogCode.Accepted:
             QApplication.instance().quit()
             return
 
-        # Logged in as someone else — open a fresh window
         global _current_window
         new_window = MainWindow()
         _current_window = new_window

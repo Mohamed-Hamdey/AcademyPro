@@ -322,5 +322,36 @@
   "users.error.last_manager_title": "Cannot deactivate the last manager",
   "users.error.last_manager_deactivate_msg": "This is the last active manager in the system. Deactivating them would lock everyone out.",
   "users.error.last_manager_msg": "Cannot change the role of the last active manager.",
+    "nav.audit": "Audit Log",
+  "audit.title": "Audit Log",
+
+  "audit.search_placeholder": "Search by username or action…",
+  "audit.filter.all_actions": "All actions",
+  "audit.filter.all_users": "All users",
+  "audit.date_from": "From:",
+  "audit.date_to": "To:",
+  "audit.clear_filters": "Clear filters",
+
+  "audit.col.when": "When",
+  "audit.col.user": "User",
+  "audit.col.action": "Action",
+  "audit.col.target": "Target",
+  "audit.col.details": "Details",
+
+  "audit.empty": "No recorded actions match these filters.",
+
+  "audit.action.user.create": "Created user",
+  "audit.action.user.update": "Updated user",
+  "audit.action.user.password_change": "Changed password",
+  "audit.action.player.create": "Created player",
+  "audit.action.player.update": "Updated player",
+  "audit.action.player.qr_reissue": "Reissued QR",
+  "audit.action.subscription.activate": "Activated subscription",
+  "audit.action.subscription.suspend": "Suspended subscription",
+  "audit.action.subscription.adjust_sessions": "Adjusted sessions",
+  "audit.action.subscription.record_payment": "Recorded payment",
+  "audit.action.attendance.undo": "Undid attendance",
+  "audit.action.attendance.manual_checkin": "Manual check-in",
+  "audit.action.attendance.override": "Override denial",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

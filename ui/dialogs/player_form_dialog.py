@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QDate
 
 from ui.message_box import warn, error
-
+from services import audit_service
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import load_config, get_group_label
 from models.player import Player
@@ -175,6 +175,10 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             self.editing_player.photo_path = stored_photo_path
             try:
                 players_repo.update(self.editing_player)
+                audit_service.player_updated(
+                player_id=self.editing_player.player_id,
+                name=self.editing_player.full_name,
+            )
             except Exception as e:
                 error(self, t("dlg.player.save_failed"), str(e))
                 return
@@ -202,6 +206,10 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             new_player.player_id = self.saved_player_id
             new_player.qr_code_path = qr_path
             players_repo.update(new_player)
+            audit_service.player_created(
+                player_id=new_player.player_id,
+                name=new_player.full_name,
+            )
             self.newly_created_qr_path = qr_path
 
         self.accept()

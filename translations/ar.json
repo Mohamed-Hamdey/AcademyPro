@@ -316,6 +316,37 @@
   "users.error.last_manager_title": "لا يمكن تعطيل آخر مدير",
   "users.error.last_manager_deactivate_msg": "هذا آخر مدير نشط في النظام. تعطيله سيمنع أي شخص من إدارة النظام.",
   "users.error.last_manager_msg": "لا يمكن تغيير دور آخر مدير نشط.",
+    "nav.audit": "سجل العمليات",
+  "audit.title": "سجل العمليات",
+
+  "audit.search_placeholder": "ابحث باسم المستخدم أو الإجراء…",
+  "audit.filter.all_actions": "كل الإجراءات",
+  "audit.filter.all_users": "كل المستخدمين",
+  "audit.date_from": "من:",
+  "audit.date_to": "إلى:",
+  "audit.clear_filters": "مسح الفلاتر",
+
+  "audit.col.when": "التاريخ",
+  "audit.col.user": "المستخدم",
+  "audit.col.action": "الإجراء",
+  "audit.col.target": "الهدف",
+  "audit.col.details": "التفاصيل",
+
+  "audit.empty": "لا توجد عمليات مسجَّلة بهذه الفلاتر.",
+
+  "audit.action.user.create": "إنشاء مستخدم",
+  "audit.action.user.update": "تعديل مستخدم",
+  "audit.action.user.password_change": "تغيير كلمة مرور",
+  "audit.action.player.create": "إنشاء لاعب",
+  "audit.action.player.update": "تعديل لاعب",
+  "audit.action.player.qr_reissue": "إعادة إصدار QR",
+  "audit.action.subscription.activate": "تفعيل اشتراك",
+  "audit.action.subscription.suspend": "تعليق اشتراك",
+  "audit.action.subscription.adjust_sessions": "تعديل عدد الحصص",
+  "audit.action.subscription.record_payment": "تسجيل دفعة",
+  "audit.action.attendance.undo": "التراجع عن حضور",
+  "audit.action.attendance.manual_checkin": "حضور يدوي",
+  "audit.action.attendance.override": "تجاوز رفض",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

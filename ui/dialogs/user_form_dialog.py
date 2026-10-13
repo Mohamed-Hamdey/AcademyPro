@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QFileDialog, QCheckBox, QMessageBox,
 )
 from PyQt6.QtCore import Qt
-
+from services import audit_service
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from repositories import users_repo
 from services import auth_service
@@ -257,6 +257,15 @@ class UserFormDialog(ThemedWidget, QDialog):
 
             try:
                 users_repo.update(updated)
+                audit_service.user_updated(
+                user_id=updated.user_id,
+                username=updated.username,
+                changes={
+                    "display_name": updated.display_name,
+                    "role": updated.role,
+                    "active": updated.active,
+                },
+            )
             except Exception as e:
                 self._show_error(str(e))
                 return
@@ -284,7 +293,7 @@ class UserFormDialog(ThemedWidget, QDialog):
         photo_path = self._persist_photo(self._selected_photo_path, username)
 
         try:
-            auth_service.create_user(
+            new_user_id = auth_service.create_user(
                 username=username,
                 display_name=display_name,
                 password=password,
@@ -294,5 +303,7 @@ class UserFormDialog(ThemedWidget, QDialog):
         except Exception as e:
             self._show_error(str(e))
             return
+
+        audit_service.user_created(user_id=new_user_id, username=username)
 
         self.accept()

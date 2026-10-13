@@ -131,6 +131,8 @@ def perform_check_in(
             player=player, subscription=result.subscription,
             checked_in=True, reason=None, was_override=True,
         )
+    from services import audit_service
+    audit_service.checkin_override(player_id=player_id, note=note)
 
     attendance_service.log_attendance(
         player_id, sub_id, "denied", result.reason, recorded_by

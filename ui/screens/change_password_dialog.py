@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton,
     QHBoxLayout, QLabel,
 )
-
+from services import audit_service
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import auth_service
 from ui.theme import theme, ThemedWidget, make_secondary
@@ -114,6 +114,11 @@ class ChangePasswordDialog(ThemedWidget, QDialog):
 
         try:
             auth_service.change_password(self.user.user_id, new_pw)
+                   
+            from repositories import users_repo
+            updated = users_repo.get_by_id(self.user.user_id)
+            if updated is not None:
+                self.user.password_hash = updated.password_hash
         except Exception as e:
             self._show_error(str(e))
             return
@@ -123,5 +128,12 @@ class ChangePasswordDialog(ThemedWidget, QDialog):
         updated = users_repo.get_by_id(self.user.user_id)
         if updated is not None:
             self.user.password_hash = updated.password_hash
-
+        # Audit: was this the user changing their own password, or an admin?
+        from app_state import app as app_state
+        by_admin = app_state.user is not None and app_state.user.user_id != self.user.user_id
+        audit_service.user_password_changed(
+            user_id=self.user.user_id,
+            username=self.user.username,
+            by_admin=by_admin,
+        )
         self.accept()

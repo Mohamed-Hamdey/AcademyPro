@@ -27,7 +27,7 @@ import os
 import sys
 import shutil
 from datetime import date
-
+from services import audit_service
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit, QTabWidget, QFileDialog,
@@ -315,6 +315,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             return
         if ask(self, t("detail.msg.suspend_title"), t("detail.msg.suspend_body")):
             subscription_service.suspend(self.current_subscription.subscription_id)
+            audit_service.subscription_suspended(
+                subscription_id=self.current_subscription.subscription_id,
+            )
             self.refresh()
 
     def _on_adjust_sessions(self):
@@ -327,7 +330,16 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             parent=self,
         )
         if dialog.exec():
-            subscription_service.adjust_sessions(self.current_subscription.subscription_id, dialog.new_value())
+            old = self.current_subscription.sessions_remaining
+            new = dialog.new_value()
+            subscription_service.adjust_sessions(
+                self.current_subscription.subscription_id, new
+            )
+            audit_service.subscription_sessions_adjusted(
+                subscription_id=self.current_subscription.subscription_id,
+                old_value=old,
+                new_value=new,
+            )
             self.refresh()
 
     def _on_record_payment(self):
@@ -340,6 +352,11 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         if dialog.exec():
             amount, payment_date = dialog.get_values()
             subscription_service.record_payment(display["subscription_id"], amount, payment_date)
+            audit_service.payment_recorded(
+                subscription_id=display["subscription_id"],
+                amount=amount,
+                payment_date=payment_date.isoformat(),
+            )
             self.refresh()
 
     def _on_export_qr(self):
@@ -366,12 +383,17 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             warn(self, t("detail.att.cannot_undo_title"), t("detail.att.cannot_undo_msg"))
             return
         if attendance_service.undo_check_in(entry.log_id, date.today()):
+            audit_service.attendance_undone(
+                log_id=entry.log_id,
+                player_id=self.player_id,
+            )
             self.refresh()
         else:
             warn(self, t("detail.att.undo_failed_title"), t("detail.att.undo_failed_msg"))
 
     def _on_manual_check_in(self):
         outcome = perform_check_in(self.player_id, parent_widget=self)
+        audit_service.manual_checkin(player_id=self.player_id)
         if outcome is None:
             warn(self, t("checkin.unknown_player_title"),
                  t("detail.msg.player_not_found"))
@@ -384,6 +406,10 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         path = generate_qr_for_player(self.player_id)
         self.current_player.qr_code_path = path
         players_repo.update(self.current_player)
+        audit_service.qr_reissued(
+            player_id=self.player_id,
+            name=self.current_player.full_name,
+        )
         info(self, t("detail.msg.reissue_qr_done_title"),
              t("detail.msg.reissue_qr_done_msg", path=path))
         self.refresh()
