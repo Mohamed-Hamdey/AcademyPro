@@ -398,5 +398,10 @@
   "detail.sub.col.days": "Training Days",
   "detail.sub.custom": "Custom",
   "detail.sub.none_active": "No active subscription.",
+    "checkin.session.label": "Session:",
+  "checkin.session.auto": "Auto (based on player's data)",
+
+  "checkin.not_enrolled.title": "Not enrolled in this activity",
+  "checkin.not_enrolled.msg": "Player \"{name}\" is not enrolled in \"{activity}\". Change the session or pick the correct activity.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

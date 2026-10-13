@@ -34,7 +34,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from config.config_loader import get_plan, get_plan_label
+from config.config_loader import  get_plan_label
 from services import subscription_service, attendance_service
 from ui.components import SectionCard, KpiCard, Toolbar, EmptyState
 from ui.theme import theme, ThemedWidget
@@ -184,7 +184,10 @@ class ProgressPanel(ThemedWidget, QWidget):
 
     def refresh(self):
         attendance = attendance_service.get_for_player(self.player_id)
-        active_sub = subscription_service.get_active(self.player_id)
+        # Use the newest active sub (first in the list). We could later
+        # extend this to aggregate across multiple subs.
+        active_subs = subscription_service.get_all_active(self.player_id)
+        active_sub = active_subs[0] if active_subs else None
 
         total_attended = sum(1 for e in attendance if e.result == "allowed")
         denial_count = sum(1 for e in attendance if e.result == "denied")
@@ -209,7 +212,11 @@ class ProgressPanel(ThemedWidget, QWidget):
         self.history_table.setRowCount(len(history))
         tm = theme()
         for i, sub in enumerate(history):
-            self.history_table.setItem(i, 0, QTableWidgetItem(get_plan_label(sub.plan_type)))
+            if sub.plan_type:
+                plan_text = get_plan_label(sub.plan_type)
+            else:
+                plan_text = t("detail.sub.custom")
+            self.history_table.setItem(i, 0, QTableWidgetItem(plan_text))
             self.history_table.setItem(i, 1, QTableWidgetItem(sub.start_date))
             self.history_table.setItem(i, 2, QTableWidgetItem(sub.expiry_date))
 
@@ -257,8 +264,8 @@ class ProgressPanel(ThemedWidget, QWidget):
             for e in attendance if e.result == "allowed"
         }
 
-        plan = get_plan(active_sub.plan_type)
-        allowed_weekday_names = set(plan["allowed_days"])
+        allowed_weekday_names = set(active_sub.allowed_days or [])
+
 
         today = date.today()
         days_in_month = calendar.monthrange(year, month)[1]

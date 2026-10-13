@@ -391,6 +391,11 @@
   "detail.sub.col.expires": "ينتهي في",
   "detail.sub.col.days": "أيام التدريب",
   "detail.sub.custom": "مخصص",
+    "checkin.session.label": "الجلسة:",
+  "checkin.session.auto": "تلقائي (حسب بيانات اللاعب)",
+
+  "checkin.not_enrolled.title": "غير مسجَّل في هذا النشاط",
+  "checkin.not_enrolled.msg": "اللاعب «{name}» غير مسجَّل في نشاط «{activity}». غيّر الجلسة أو اختر النشاط الصحيح.",
   "detail.sub.none_active": "لا يوجد اشتراك نشط حالياً.",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 

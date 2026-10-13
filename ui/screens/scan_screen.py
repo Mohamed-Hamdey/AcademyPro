@@ -1,31 +1,31 @@
 """
-Receptionist scan screen — v4 design.
+Receptionist scan screen — v4 with activity selector.
 
-Layout (RTL: controls on the right, content mirrored):
+Layout:
     ┌──────────────────────────────────────────────────────────┐
-    │  [Status pill] [▶ Start Scan] [■ Stop Scan]              │  ← Toolbar
+    │  [Session: Auto ▾] [● Camera off] [▶ Start] [■ Stop]     │
     │                                                          │
-    │  ┌─ Camera (SectionCard) ─────┐  ┌─ Recent (SectionCard)─┐│
-    │  │   [camera preview]         │  │  ✓ 09:12  أحمد       ││
-    │  │   hint                     │  │  ✕ 09:10  محمود       ││
-    │  └────────────────────────────┘  └───────────────────────┘│
+    │  ┌─ Camera ────────────────────┐  ┌─ Recent ──────────┐  │
+    │  │  [preview]                  │  │ ✓ 09:12  أحمد     │  │
+    │  └─────────────────────────────┘  └───────────────────┘  │
     │                                                          │
-    │  ┌─ Manual check-in (SectionCard) ───────────────────────┐│
-    │  │  [search input]                    [Search button]    ││
-    │  │  [results list — appears on demand]                   ││
-    │  └───────────────────────────────────────────────────────┘│
+    │  ┌─ Manual check-in ─────────────────────────────────┐   │
+    │  │  [search]                          [Search]        │   │
+    │  └────────────────────────────────────────────────────┘   │
     └──────────────────────────────────────────────────────────┘
 
-The screen no longer carries its own page title; the workspace header
-shows it (see ui/main_window.py + ui/shell.py).
+The "Session" selector at the top lets the receptionist choose which
+activity is being scanned. Default is "Auto" (فقط حدد حسب بيانات اللاعب).
+Specific selection forces only that activity's subs to be considered.
 """
 
+from datetime import date
 import os
 import sys
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QListWidget, QListWidgetItem, QStackedWidget,
+    QLineEdit, QListWidget, QListWidgetItem, QStackedWidget, QComboBox,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QColor
@@ -35,17 +35,18 @@ from ui.message_box import warn
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_academy_name
 from repositories import players_repo
-from services import attendance_service
+from services import attendance_service, subscription_service, activity_service
 from services.checkin_service import perform_check_in
 from logic.qr_utils import decode_qr_from_frame
 from ui.cards.player_card import PlayerCardWidget
-from ui.components import SectionCard, Toolbar, EmptyState, Pill
-from ui.theme import theme, make_danger, make_secondary, ThemedWidget
+from ui.components import SectionCard, Toolbar, Pill
+from ui.theme import theme, make_danger, ThemedWidget
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
 CARD_DISPLAY_MS = 2500
+AUTO_ACTIVITY = -1     # sentinel for "Auto" in the selector
 
 
 class ScanScreen(ThemedWidget, QWidget):
@@ -66,10 +67,17 @@ class ScanScreen(ThemedWidget, QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        # ---- Toolbar row: status pill + camera controls ----
+        # ---- Toolbar: session selector + camera controls ----
         self.toolbar = Toolbar()
-        root.addWidget(self.toolbar)
 
+        # Session selector
+        self.session_label = QLabel(t("checkin.session.label"))
+        self.session_input = QComboBox()
+        self.session_input.setMinimumWidth(200)
+        self._reload_activities()
+        self.session_input.currentIndexChanged.connect(self._on_session_changed)
+
+        # Camera status + controls
         self.camera_status_pill = Pill(t("checkin.status.camera_off"), "neutral")
         self.start_scan_button = QPushButton(t("checkin.btn.start_scan"))
         self.stop_scan_button = QPushButton(t("checkin.btn.stop_scan"))
@@ -79,9 +87,13 @@ class ScanScreen(ThemedWidget, QWidget):
         self.start_scan_button.clicked.connect(self._on_start_scan_clicked)
         self.stop_scan_button.clicked.connect(self._on_stop_scan_clicked)
 
-        self.toolbar.add_leading(self.camera_status_pill)
+        self.toolbar.add_leading(self.session_label)
+        self.toolbar.add_leading(self.session_input, stretch=1)
+        self.toolbar.add_trailing(self.camera_status_pill)
         self.toolbar.add_trailing(self.start_scan_button)
         self.toolbar.add_trailing(self.stop_scan_button)
+
+        root.addWidget(self.toolbar)
 
         # ---- Main row: camera card + recent card ----
         main_row = QHBoxLayout()
@@ -109,7 +121,7 @@ class ScanScreen(ThemedWidget, QWidget):
 
         self.stack.addWidget(idle)
 
-        # Result page (player card)
+        # Result page
         result = QWidget()
         result_layout = QVBoxLayout(result)
         result_layout.setContentsMargins(0, 0, 0, 0)
@@ -122,7 +134,7 @@ class ScanScreen(ThemedWidget, QWidget):
         self.stack.setCurrentIndex(0)
         main_row.addWidget(self.camera_card, stretch=3)
 
-        # Recent check-ins card
+        # Recent card
         self.recent_card = SectionCard(title=t("checkin.card.recent"))
         self.recent_list = QListWidget()
         self.recent_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -132,7 +144,7 @@ class ScanScreen(ThemedWidget, QWidget):
 
         root.addLayout(main_row, stretch=1)
 
-        # ---- Manual check-in card ----
+        # Manual check-in card
         self.search_card = SectionCard(title=t("checkin.card.manual"))
         search_row = QHBoxLayout()
         search_row.setSpacing(SPACING["sm"])
@@ -157,11 +169,45 @@ class ScanScreen(ThemedWidget, QWidget):
 
         root.addWidget(self.search_card)
 
+    def _reload_activities(self):
+        """Fill the session selector with Auto + each active activity."""
+        self.session_input.blockSignals(True)
+        self.session_input.clear()
+        self.session_input.addItem(t("checkin.session.auto"), AUTO_ACTIVITY)
+
+        for act in activity_service.list_active():
+            display = f"{act.name_en} · {act.name_ar}" if act.name_en != act.name_ar else act.name_en
+            self.session_input.addItem(display, act.activity_id)
+
+        # Default: Auto (row 0). Every fresh launch starts on Auto.
+        self.session_input.setCurrentIndex(0)
+        self.session_input.blockSignals(False)
+
+    def _current_activity_id(self):
+        """The activity_id the session is set to, or None for Auto."""
+        val = self.session_input.currentData()
+        if val is None or val == AUTO_ACTIVITY:
+            return None
+        return val
+
+    def _on_session_changed(self, _index):
+        # No action needed yet — the value is read at scan time.
+        pass
+
     # ---------- theming ----------
 
     def restyle(self):
         tm = theme()
 
+        self.session_label.setStyleSheet(
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-size: 13px;"
+            f"  font-weight: 600;"
+            f"  padding-right: 6px;"
+            f"}}"
+        )
         self.camera_hint.setStyleSheet(
             f"QLabel {{"
             f"  color: {tm.color('text_secondary')};"
@@ -335,7 +381,13 @@ class ScanScreen(ThemedWidget, QWidget):
     # ---------- pipeline ----------
 
     def handle_player_id(self, player_id: int, recorded_by: str = None):
-        outcome = perform_check_in(player_id, parent_widget=self, recorded_by=recorded_by)
+        activity_id = self._current_activity_id()
+        outcome = perform_check_in(
+            player_id,
+            parent_widget=self,
+            recorded_by=recorded_by,
+            preselect_activity_id=activity_id,
+        )
         if outcome is None:
             warn(
                 self,
@@ -344,6 +396,7 @@ class ScanScreen(ThemedWidget, QWidget):
             )
             return
 
+        # Duplicate
         if getattr(outcome, "was_duplicate", False):
             warn(
                 self,
@@ -351,6 +404,36 @@ class ScanScreen(ThemedWidget, QWidget):
                 t("checkin.already_today_msg", name=outcome.player.full_name),
             )
             return
+
+        # Not enrolled in selected activity
+        if getattr(outcome, "not_enrolled_in_activity", False):
+            warn(
+                self,
+                t("checkin.not_enrolled.title"),
+                t("checkin.not_enrolled.msg",
+                  name=outcome.player.full_name,
+                  activity=outcome.missing_activity_name),
+            )
+            return
+
+        # Multiple valid subs + Auto mode → picker popup
+        if getattr(outcome, "needs_picker", False):
+            from ui.dialogs.activity_picker_dialog import ActivityPickerDialog
+            picker = ActivityPickerDialog(
+                outcome.player.full_name,
+                outcome.valid_subscriptions,
+                parent=self,
+            )
+            if picker.exec() != picker.DialogCode.Accepted:
+                return
+            outcome = perform_check_in(
+                player_id,
+                parent_widget=self,
+                recorded_by=recorded_by,
+                preselect_subscription_id=picker.chosen_subscription_id,
+            )
+            if outcome is None:
+                return
 
         state = "checked_in" if outcome.checked_in else "denied"
         self.player_card.display_player(outcome.player, outcome.subscription, check_in_state=state)
