@@ -44,22 +44,28 @@ class TopBar(QWidget):
       * Theme toggle
     """
 
-    def __init__(self, on_logout=None, parent=None):
+    def __init__(self, on_logout=None, on_toggle_sidebar=None, parent=None):
         super().__init__(parent)
         self.setObjectName("topBar")
-        self.setFixedHeight(SHELL["topbar_height"])
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedHeight(SHELL["topbar_height"])
         self._on_logout = on_logout
+        self._on_toggle_sidebar = on_toggle_sidebar
         self._build_ui()
         theme().on_change(lambda _m: self.restyle())
         self.restyle()
-
     def _build_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 8, 16, 8)
         layout.setSpacing(12)
 
-        # ---- Logo + name ----
+        # ---- Logo + name (clickable → toggles the sidebar) ----
+        self.brand_widget = QWidget()
+        self.brand_widget.setObjectName("brandWidget")
+        self.brand_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.brand_widget.setToolTip(t("sidebar.toggle_hint"))
+        self.brand_widget.mousePressEvent = self._on_brand_clicked
+
         self.logo_label = QLabel()
         self.logo_label.setFixedSize(32, 32)
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -68,12 +74,14 @@ class TopBar(QWidget):
         self.title_label = QLabel()
         self.title_label.setObjectName("topBarTitle")
 
-        brand_row = QHBoxLayout()
+        brand_row = QHBoxLayout(self.brand_widget)
+        brand_row.setContentsMargins(0, 0, 0, 0)
         brand_row.setSpacing(10)
         brand_row.addWidget(self.logo_label)
         brand_row.addWidget(self.title_label)
         brand_row.addStretch()
-        layout.addLayout(brand_row, stretch=1)
+
+        layout.addWidget(self.brand_widget, stretch=1)
 
         # ---- Global search ----
         self.search_input = QLineEdit()
@@ -106,7 +114,9 @@ class TopBar(QWidget):
         else:
             initials = "".join(w[0] for w in get_academy_name().split()[:3]).upper()
             self.logo_label.setText(initials or "A")
-
+    def _on_brand_clicked(self, event):
+        if self._on_toggle_sidebar is not None:
+            self._on_toggle_sidebar()
     def _show_user_menu(self):
         menu = QMenu(self)
 
@@ -238,12 +248,13 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(SHELL["sidebar_width"])
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedWidth(SHELL["sidebar_width"])
+        self._collapsed = False
+        self._nav_entries = []   # list of (label_key, glyph) in order
         self._build_ui()
         theme().on_change(lambda _m: self.restyle())
         self.restyle()
-
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -257,11 +268,7 @@ class Sidebar(QWidget):
     def add_item(self, label_key: str, icon_glyph: str,
                  required_permission: str = None) -> int:
         """
-        Add a nav item.
-
-        If `required_permission` is provided and the current user's role
-        does not have that permission, the item is NOT added and -1 is
-        returned. Callers should skip registering a page in that case.
+        Add a nav item. See the class docstring for permission behavior.
         """
         if required_permission is not None:
             if not app_state.can(required_permission):
@@ -270,9 +277,52 @@ class Sidebar(QWidget):
         item = QListWidgetItem()
         item.setData(Qt.ItemDataRole.UserRole, (label_key, icon_glyph))
         item.setSizeHint(QSize(0, 42))
-        item.setText(f"  {icon_glyph}   {t(label_key)}")
         self.nav_list.addItem(item)
+        self._nav_entries.append((label_key, icon_glyph))
+        self._render_item(self.nav_list.count() - 1)
         return self.nav_list.count() - 1
+
+    def _render_item(self, index: int):
+        """Render one nav item according to the current collapse state."""
+        item = self.nav_list.item(index)
+        if item is None:
+            return
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        label_key, glyph = data
+        if self._collapsed:
+            item.setText(glyph)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setToolTip(t(label_key))
+            item.setSizeHint(QSize(0, 48))
+        else:
+            item.setText(f"  {glyph}   {t(label_key)}")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            item.setToolTip("")
+            item.setSizeHint(QSize(0, 42))
+
+    def is_collapsed(self) -> bool:
+        return self._collapsed
+
+    def toggle_collapsed(self):
+        self._collapsed = not self._collapsed
+        if self._collapsed:
+            self.setFixedWidth(SHELL["sidebar_collapsed_width"])
+        else:
+            self.setFixedWidth(SHELL["sidebar_width"])
+        # Re-render every item to switch glyph-only / label view
+        for i in range(self.nav_list.count()):
+            self._render_item(i)
+        self.restyle()
+
+    def collapse(self):
+        if not self._collapsed:
+            self.toggle_collapsed()
+
+    def expand(self):
+        if self._collapsed:
+            self.toggle_collapsed()
 
     def current_row(self) -> int:
         return self.nav_list.currentRow()

@@ -201,7 +201,7 @@ SPACING = {
 SHELL = {
     "topbar_height":  56,    # px
     "sidebar_width":  220,   # px
-    "sidebar_collapsed_width": 60,
+    "sidebar_collapsed_width": 67,
     "content_gutter": 24,    # px around workspace content
 }
 

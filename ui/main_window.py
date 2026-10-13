@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QDialog,
 )
 from PyQt6.QtCore import Qt
-
+from ui.screens.activities_screen import ActivitiesScreen
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from ui.screens.scan_screen import ScanScreen
 from ui.screens.player_list_screen import PlayerListScreen
@@ -59,10 +59,12 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ---- Top bar (with logout callback) ----
-        self.topbar = TopBar(on_logout=self._on_logout)
+        # ---- Top bar (logout + sidebar toggle callbacks) ----
+        self.topbar = TopBar(
+            on_logout=self._on_logout,
+            on_toggle_sidebar=self._toggle_sidebar,
+        )
         outer.addWidget(self.topbar)
-
         # ---- Body: sidebar + workspace ----
         body = QWidget()
         body_layout = QHBoxLayout(body)
@@ -76,6 +78,7 @@ class MainWindow(QMainWindow):
         # Order here determines sidebar order.
         self._register_page("nav.check_in",       "checkin.title", ScanScreen(),       "checkin")
         self._register_page("nav.manage_players", "players.title", PlayerListScreen(), "players.view")
+        self._register_page("nav.activities", "activities.title", ActivitiesScreen(), "activities.manage")
         self._register_page("nav.users",          "users.title",   UsersScreen(),     "users.manage")
         self._register_page("nav.audit",          "audit.title",   AuditScreen(),     "audit.view")
 
@@ -120,7 +123,9 @@ class MainWindow(QMainWindow):
             "nav.check_in":       "▶",
             "nav.manage_players": "▤",
             "nav.users":          "👥",
+            "nav.activities":     "🏃",
             "nav.audit":          "🗒",
+
         }.get(nav_key, "•")
 
     def _on_nav_changed(self, index: int):
@@ -129,7 +134,8 @@ class MainWindow(QMainWindow):
             return
         nav_key = self._nav_keys_in_order[index]
         self.workspace.show_page_by_key(nav_key)
-
+    def _toggle_sidebar(self):
+        self.sidebar.toggle_collapsed()
     def _restyle(self):
         pass
 
