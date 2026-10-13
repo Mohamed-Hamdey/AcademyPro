@@ -18,12 +18,12 @@ def create(player: Player) -> int:
             """
             INSERT INTO players
                 (full_name, national_id, phone, dob, photo_path,
-                 player_group, qr_code_path, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 qr_code_path, status, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 player.full_name, player.national_id, player.phone, player.dob,
-                player.photo_path, player.player_group, player.qr_code_path,
+                player.photo_path, player.qr_code_path,
                 player.status, player.notes,
             ),
         )
@@ -85,13 +85,12 @@ def update(player: Player) -> None:
             """
             UPDATE players
             SET full_name = ?, national_id = ?, phone = ?, dob = ?,
-                photo_path = ?, player_group = ?, qr_code_path = ?,
-                status = ?, notes = ?
+                photo_path = ?, qr_code_path = ?, status = ?, notes = ?
             WHERE player_id = ?
             """,
             (
                 player.full_name, player.national_id, player.phone, player.dob,
-                player.photo_path, player.player_group, player.qr_code_path,
+                player.photo_path, player.qr_code_path,
                 player.status, player.notes, player.player_id,
             ),
         )

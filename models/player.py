@@ -1,5 +1,9 @@
 """
 Player model — pure dataclass, no SQL.
+
+Note: the `player_group` field has been removed (activities replace
+groups). Any code that used to reference it now uses the subscription's
+activity instead.
 """
 
 from dataclasses import dataclass
@@ -14,7 +18,6 @@ class Player:
     phone: str
     dob: str
     photo_path: Optional[str]
-    player_group: str
     qr_code_path: Optional[str]
     status: str = "active"
     notes: Optional[str] = None
@@ -28,7 +31,6 @@ class Player:
             phone=row["phone"],
             dob=row["dob"],
             photo_path=row["photo_path"],
-            player_group=row["player_group"],
             qr_code_path=row["qr_code_path"],
             status=row["status"],
             notes=row["notes"],

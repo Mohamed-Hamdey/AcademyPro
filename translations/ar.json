@@ -377,6 +377,14 @@
   "activities.dialog.save": "حفظ",
   "activities.dialog.cancel": "إلغاء",
     "sidebar.toggle_hint": "طيّ أو توسيع الشريط الجانبي",
+      "dlg.sub.activity": "النشاط*",
+  "dlg.sub.preset": "الباقة (اختياري)",
+  "dlg.sub.preset_custom": "مخصص…",
+  "dlg.sub.sessions": "عدد الحصص*",
+  "dlg.sub.days": "أيام التدريب*",
+  "dlg.sub.error.no_activity": "الرجاء اختيار نشاط.",
+  "dlg.sub.error.invalid_sessions": "عدد الحصص يجب أن يكون أكبر من صفر.",
+  "dlg.sub.error.no_days": "الرجاء اختيار يوم تدريب واحد على الأقل.",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

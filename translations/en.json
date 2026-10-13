@@ -383,5 +383,13 @@
   "activities.dialog.save": "Save",
   "activities.dialog.cancel": "Cancel",
     "sidebar.toggle_hint": "Collapse or expand the sidebar",
+      "dlg.sub.activity": "Activity*",
+  "dlg.sub.preset": "Package (optional)",
+  "dlg.sub.preset_custom": "Custom…",
+  "dlg.sub.sessions": "Sessions count*",
+  "dlg.sub.days": "Training days*",
+  "dlg.sub.error.no_activity": "Please select an activity.",
+  "dlg.sub.error.invalid_sessions": "Sessions count must be greater than zero.",
+  "dlg.sub.error.no_days": "Please select at least one training day.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

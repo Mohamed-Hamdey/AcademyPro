@@ -3,10 +3,10 @@ Player list screen — v4 design.
 
 Layout:
     ┌──────────────────────────────────────────────────────────┐
-    │  [search …] [Group ▾] [Plan ▾] [Status ▾]     [+ Add]    │  ← Toolbar
+    │  [search …] [Plan ▾] [Status ▾]              [+ Add]      │  ← Toolbar
     │                                                          │
     │  ┌─ Players (table) ─────────────────────────────────────┐│
-    │  │  ID   Name   Group   Plan   Sessions   Status          ││
+    │  │  ID   Name   Plan   Sessions   Status                  ││
     │  │  ...                                                   ││
     │  └───────────────────────────────────────────────────────┘│
     │                                                          │
@@ -29,7 +29,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from config.config_loader import load_config, get_group_label, get_plan_label
+from config.config_loader import load_config, get_plan_label
 from repositories import players_repo
 from services import subscription_service
 from ui.dialogs.player_form_dialog import PlayerFormDialog
@@ -57,8 +57,6 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self._init_theme()
 
     def _build_ui(self):
-        # The stack lets us swap between the list page and the detail page
-        # without leaving this widget.
         self.stack = QStackedWidget()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -81,12 +79,6 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
         config = load_config()
 
-        self.group_filter = QComboBox()
-        self.group_filter.addItem(t("players.filter.all_groups"), None)
-        for key, group in config["groups"].items():
-            self.group_filter.addItem(get_group_label(key), key)
-        self.group_filter.currentIndexChanged.connect(self.refresh)
-
         self.plan_filter = QComboBox()
         self.plan_filter.addItem(t("players.filter.all_plans"), None)
         for key, plan in config["plans"].items():
@@ -103,7 +95,6 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self.add_button.clicked.connect(self._on_add_player)
 
         self.toolbar.add_leading(self.search_input, stretch=1)
-        self.toolbar.add_leading(self.group_filter)
         self.toolbar.add_leading(self.plan_filter)
         self.toolbar.add_leading(self.status_filter)
         self.toolbar.add_trailing(self.add_button)
@@ -116,11 +107,10 @@ class PlayerListScreen(ThemedWidget, QWidget):
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.setSpacing(0)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([
             t("players.col.id"),
             t("players.col.name"),
-            t("players.col.group"),
             t("players.col.plan"),
             t("players.col.sessions"),
             t("players.col.status"),
@@ -180,14 +170,11 @@ class PlayerListScreen(ThemedWidget, QWidget):
         search_text = self.search_input.text().strip()
         players = players_repo.search_by_name(search_text) if search_text else players_repo.list_all()
 
-        group_filter = self.group_filter.currentData()
         plan_filter = self.plan_filter.currentData()
         status_filter = self.status_filter.currentData()
 
         rows = []
         for player in players:
-            if group_filter and player.player_group != group_filter:
-                continue
             display = subscription_service.get_display_status(player.player_id)
             if plan_filter and display["plan_type"] != plan_filter:
                 continue
@@ -198,7 +185,6 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self._render_rows(rows)
 
     def _render_rows(self, rows):
-        # Toggle between the table and the empty state.
         if not rows:
             self.table.hide()
             self.empty_state.show()
@@ -217,22 +203,20 @@ class PlayerListScreen(ThemedWidget, QWidget):
         for i, (player, display) in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(str(player.player_id)))
             self.table.setItem(i, 1, QTableWidgetItem(player.full_name))
-            self.table.setItem(i, 2, QTableWidgetItem(get_group_label(player.player_group)))
-
             if display["plan_type"]:
-                self.table.setItem(i, 3, QTableWidgetItem(get_plan_label(display["plan_type"])))
+                self.table.setItem(i, 2, QTableWidgetItem(get_plan_label(display["plan_type"])))
                 self.table.setItem(
-                    i, 4,
+                    i, 3,
                     QTableWidgetItem(f"{display['sessions_remaining']}/{display['sessions_total']}")
                 )
             else:
                 dash = t("players.col.dash")
+                self.table.setItem(i, 2, QTableWidgetItem(dash))
                 self.table.setItem(i, 3, QTableWidgetItem(dash))
-                self.table.setItem(i, 4, QTableWidgetItem(dash))
 
             status_item = QTableWidgetItem(t(_STATUS_KEY.get(display["status"], "players.status.none")))
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(i, 5, status_item)
+            self.table.setItem(i, 4, status_item)
             self._status_items.append((status_item, display["status"]))
 
         self._repaint_status_items()

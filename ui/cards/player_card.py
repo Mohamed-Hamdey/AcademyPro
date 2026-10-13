@@ -21,7 +21,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from config.config_loader import get_plan_label, get_group, get_group_label
+from config.config_loader import get_plan_label
 from ui.components import Pill
 from ui.theme import theme, ThemedWidget
 from ui.design import SPACING, RADIUS, TYPOGRAPHY
@@ -193,19 +193,20 @@ class PlayerCardWidget(QFrame, ThemedWidget):
         self.name_label.setText(player.full_name)
         self.id_label.setText(f"ID: {player.player_id}")
 
-        group = get_group(player.player_group)
-        self.group_label.setText(
-            f"{get_group_label(player.player_group)} ({group['time']})"
-        )
 
+        # Group is gone — replaced by activities. Show the subscription's
+        # activity if we have one. Otherwise a dash.
         if subscription:
-            self.plan_label.setText(get_plan_label(subscription.plan_type))
-            self.sessions_label.setText(
-                f"{subscription.sessions_remaining} / {subscription.sessions_total}"
-            )
+            try:
+                from services import activity_service
+                act = activity_service.get(subscription.activity_id) if subscription.activity_id else None
+                self.group_label.setText(
+                    activity_service.get_localized_name(act) if act else "—"
+                )
+            except Exception:
+                self.group_label.setText("—")
         else:
-            self.plan_label.setText("—")
-            self.sessions_label.setText(t("card.no_subscription"))
+            self.group_label.setText("—")
 
         if check_in_state == "checked_in":
             self.status_label.set_status(t("card.status.checked_in"), "success")

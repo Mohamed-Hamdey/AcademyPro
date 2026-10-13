@@ -54,12 +54,7 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         self.dob_input.setDisplayFormat("yyyy-MM-dd")
         self.dob_input.setDate(QDate(2015, 1, 1))
 
-        self.group_input = QComboBox()
-        config = load_config()
-        for key, group in config["groups"].items():
-            self.group_input.addItem(
-                f"{get_group_label(key)} ({group['time']})", key
-            )
+
 
         # Photo row — filename label + choose button
         self.photo_label = QLabel(t("dlg.player.no_photo"))
@@ -75,7 +70,6 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         form.addRow(t("dlg.player.national_id_optional"), self.national_id_input)
         form.addRow(t("dlg.player.phone"), self.phone_input)
         form.addRow(t("dlg.player.dob"), self.dob_input)
-        form.addRow(t("dlg.player.group"), self.group_input)
         form.addRow(t("dlg.player.photo"), photo_row)
         layout.addLayout(form)
 
@@ -108,9 +102,6 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         self.phone_input.setText(player.phone)
         y, m, d = (int(x) for x in player.dob.split("-"))
         self.dob_input.setDate(QDate(y, m, d))
-        idx = self.group_input.findData(player.player_group)
-        if idx >= 0:
-            self.group_input.setCurrentIndex(idx)
         if player.photo_path:
             self.photo_label.setText(os.path.basename(player.photo_path))
 
@@ -159,7 +150,6 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             return
 
         dob = self.dob_input.date().toString("yyyy-MM-dd")
-        group_key = self.group_input.currentData()
 
         if self.editing_player and self._selected_photo_path == self.editing_player.photo_path:
             stored_photo_path = self.editing_player.photo_path
@@ -171,7 +161,6 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             self.editing_player.national_id = national_id
             self.editing_player.phone = phone
             self.editing_player.dob = dob
-            self.editing_player.player_group = group_key
             self.editing_player.photo_path = stored_photo_path
             try:
                 players_repo.update(self.editing_player)
@@ -191,7 +180,6 @@ class PlayerFormDialog(ThemedWidget, QDialog):
                 phone=phone,
                 dob=dob,
                 photo_path=stored_photo_path,
-                player_group=group_key,
                 qr_code_path=None,
             )
             try:

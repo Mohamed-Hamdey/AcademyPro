@@ -35,34 +35,47 @@ def compute_expiry_date(start_date: date, payment_date: date = None) -> date:
 
 def activate(
     player_id: int,
-    plan_type: str,
+    activity_id: int,
+    sessions_total: int,
+    allowed_days: list[str],
     start_date: date,
     activated_by: str,
     payment_amount: float,
     payment_date: date,
+    plan_type: str = None,
 ) -> int:
     """
-    Create a new subscription row. Renewals always create a fresh row.
+    Create a new subscription row.
+
+    - activity_id: the activity this subscription is for
+    - sessions_total: the open-ended count the receptionist entered
+    - allowed_days: the specific days this player is authorized
+      (defaults to the activity's default_days, but can be overridden)
+    - plan_type: optional preset key for legacy reporting. NULL for custom.
     """
-    plan = get_plan(plan_type)
+    if sessions_total <= 0:
+        raise ValueError("Sessions count must be greater than zero")
+    if not allowed_days:
+        raise ValueError("At least one training day is required")
+
     expiry = compute_expiry_date(start_date, payment_date)
 
     sub = Subscription(
         subscription_id=None,
         player_id=player_id,
+        activity_id=activity_id,
         plan_type=plan_type,
         start_date=start_date.isoformat(),
         expiry_date=expiry.isoformat(),
-        sessions_total=plan["sessions_total"],
-        sessions_remaining=plan["sessions_total"],
+        sessions_total=sessions_total,
+        sessions_remaining=sessions_total,
+        allowed_days=allowed_days,
         status="active",
         activated_by=activated_by,
         payment_amount=payment_amount,
         payment_date=payment_date.isoformat(),
     )
     return subscriptions_repo.create(sub)
-
-
 def record_payment(subscription_id: int, payment_amount: float, payment_date: date) -> None:
     """
     Records a payment against an EXISTING subscription. Recomputes expiry

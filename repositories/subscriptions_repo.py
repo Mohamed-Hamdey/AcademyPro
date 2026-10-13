@@ -19,30 +19,38 @@ def create(subscription: Subscription) -> int:
     Insert a fully-formed Subscription row. Caller is responsible for
     having already computed expiry_date and status.
     """
+    import json
+    allowed_days_json = json.dumps(subscription.allowed_days or [])
+
     conn = get_connection()
     try:
         cur = conn.execute(
             """
             INSERT INTO subscriptions
-                (player_id, plan_type, start_date, expiry_date,
-                 sessions_total, sessions_remaining, status,
+                (player_id, activity_id, plan_type, start_date, expiry_date,
+                 sessions_total, sessions_remaining, allowed_days, status,
                  activated_by, payment_amount, payment_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                subscription.player_id, subscription.plan_type,
-                subscription.start_date, subscription.expiry_date,
-                subscription.sessions_total, subscription.sessions_remaining,
-                subscription.status, subscription.activated_by,
-                subscription.payment_amount, subscription.payment_date,
+                subscription.player_id,
+                subscription.activity_id,
+                subscription.plan_type,
+                subscription.start_date,
+                subscription.expiry_date,
+                subscription.sessions_total,
+                subscription.sessions_remaining,
+                allowed_days_json,
+                subscription.status,
+                subscription.activated_by,
+                subscription.payment_amount,
+                subscription.payment_date,
             ),
         )
         conn.commit()
         return cur.lastrowid
     finally:
         conn.close()
-
-
 def get_by_id(subscription_id: int) -> Optional[Subscription]:
     conn = get_connection()
     try:
