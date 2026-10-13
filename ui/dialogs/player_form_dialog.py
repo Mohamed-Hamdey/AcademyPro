@@ -1,4 +1,4 @@
-"""Player create/edit dialog — Arabic."""
+"""Player create/edit dialog — v4 design."""
 
 import os
 import sys
@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QDateEdit, QPushButton, QHBoxLayout, QFileDialog, QLabel,
 )
 from PyQt6.QtCore import QDate
+
 from ui.message_box import warn, error
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -16,6 +17,7 @@ from models.player import Player
 from repositories import players_repo
 from logic.qr_utils import generate_qr_for_player
 from ui.theme import theme, ThemedWidget, make_secondary
+from ui.design import SPACING
 from ui.i18n import t
 
 
@@ -23,7 +25,9 @@ class PlayerFormDialog(ThemedWidget, QDialog):
     def __init__(self, player=None, parent=None):
         QDialog.__init__(self, parent)
         self.editing_player = player
-        self.setWindowTitle(t("dlg.player.title_edit") if player else t("dlg.player.title_add"))
+        self.setWindowTitle(
+            t("dlg.player.title_edit") if player else t("dlg.player.title_add")
+        )
         self.setMinimumWidth(420)
         self._selected_photo_path = player.photo_path if player else None
         self._build_ui()
@@ -33,11 +37,12 @@ class PlayerFormDialog(ThemedWidget, QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setSpacing(SPACING["md"])
 
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(SPACING["sm"])
+        form.setLabelAlignment(form.labelAlignment())
 
         self.name_input = QLineEdit()
         self.national_id_input = QLineEdit()
@@ -56,11 +61,13 @@ class PlayerFormDialog(ThemedWidget, QDialog):
                 f"{get_group_label(key)} ({group['time']})", key
             )
 
+        # Photo row — filename label + choose button
         self.photo_label = QLabel(t("dlg.player.no_photo"))
         photo_button = QPushButton(t("dlg.player.choose_photo"))
         make_secondary(photo_button)
         photo_button.clicked.connect(self._choose_photo)
         photo_row = QHBoxLayout()
+        photo_row.setSpacing(SPACING["sm"])
         photo_row.addWidget(self.photo_label, stretch=1)
         photo_row.addWidget(photo_button)
 
@@ -73,6 +80,7 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         layout.addLayout(form)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(SPACING["sm"])
         cancel_button = QPushButton(t("dlg.player.cancel"))
         make_secondary(cancel_button)
         save_button = QPushButton(t("dlg.player.save"))
@@ -85,9 +93,13 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         layout.addLayout(button_row)
 
     def restyle(self):
-        t_ = theme()
+        tm = theme()
         self.photo_label.setStyleSheet(
-            f"color: {t_.color('text_secondary')}; font-size: 12px;"
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-size: 12px;"
+            f"}}"
         )
 
     def _prefill(self, player):

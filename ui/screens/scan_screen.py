@@ -1,8 +1,23 @@
 """
-Receptionist scan screen (v3 — Arabic).
+Receptionist scan screen — v4 design.
 
-Layout is unchanged from the English version; only strings changed.
-All user-visible text comes from t("checkin.*").
+Layout (RTL: controls on the right, content mirrored):
+    ┌──────────────────────────────────────────────────────────┐
+    │  [Status pill] [▶ Start Scan] [■ Stop Scan]              │  ← Toolbar
+    │                                                          │
+    │  ┌─ Camera (SectionCard) ─────┐  ┌─ Recent (SectionCard)─┐│
+    │  │   [camera preview]         │  │  ✓ 09:12  أحمد       ││
+    │  │   hint                     │  │  ✕ 09:10  محمود       ││
+    │  └────────────────────────────┘  └───────────────────────┘│
+    │                                                          │
+    │  ┌─ Manual check-in (SectionCard) ───────────────────────┐│
+    │  │  [search input]                    [Search button]    ││
+    │  │  [results list — appears on demand]                   ││
+    │  └───────────────────────────────────────────────────────┘│
+    └──────────────────────────────────────────────────────────┘
+
+The screen no longer carries its own page title; the workspace header
+shows it (see ui/main_window.py + ui/shell.py).
 """
 
 import os
@@ -12,23 +27,23 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QListWidget, QListWidgetItem, QStackedWidget,
 )
-from ui.message_box import warn
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QColor
+
+from ui.message_box import warn
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_academy_name
 from repositories import players_repo
 from services import attendance_service
-from services.checkin_service import perform_check_in, RECORDED_BY
+from services.checkin_service import perform_check_in
 from logic.qr_utils import decode_qr_from_frame
 from ui.cards.player_card import PlayerCardWidget
-from ui.theme import (
-    theme, make_danger, ThemedWidget,
-    CARD_RADIUS, GUTTER, force_repaint,
-)
-from ui.widgets import Card, StatusPill
+from ui.components import SectionCard, Toolbar, EmptyState, Pill
+from ui.theme import theme, make_danger, make_secondary, ThemedWidget
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
+
 
 CARD_DISPLAY_MS = 2500
 
@@ -48,57 +63,56 @@ class ScanScreen(ThemedWidget, QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(GUTTER, GUTTER, GUTTER, GUTTER)
-        root.setSpacing(16)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(SPACING["lg"])
 
-        # --- title row ---
-        title_row = QHBoxLayout()
-        title_row.setSpacing(12)
+        # ---- Toolbar row: status pill + camera controls ----
+        self.toolbar = Toolbar()
+        root.addWidget(self.toolbar)
 
-        title_col = QVBoxLayout()
-        title_col.setSpacing(2)
-        self.title = QLabel(t("checkin.title"))
-        self.subtitle = QLabel(t("checkin.subtitle", academy=get_academy_name()))
-        title_col.addWidget(self.title)
-        title_col.addWidget(self.subtitle)
-        title_row.addLayout(title_col)
-        title_row.addStretch()
-
-        self.camera_status_pill = StatusPill(t("checkin.status.camera_off"), "muted")
+        self.camera_status_pill = Pill(t("checkin.status.camera_off"), "neutral")
         self.start_scan_button = QPushButton(t("checkin.btn.start_scan"))
         self.stop_scan_button = QPushButton(t("checkin.btn.stop_scan"))
         make_danger(self.stop_scan_button)
         self.stop_scan_button.setEnabled(False)
+
         self.start_scan_button.clicked.connect(self._on_start_scan_clicked)
         self.stop_scan_button.clicked.connect(self._on_stop_scan_clicked)
-        title_row.addWidget(self.camera_status_pill)
-        title_row.addWidget(self.start_scan_button)
-        title_row.addWidget(self.stop_scan_button)
-        root.addLayout(title_row)
 
-        # --- main row: camera card + recent card ---
+        self.toolbar.add_leading(self.camera_status_pill)
+        self.toolbar.add_trailing(self.start_scan_button)
+        self.toolbar.add_trailing(self.stop_scan_button)
+
+        # ---- Main row: camera card + recent card ----
         main_row = QHBoxLayout()
-        main_row.setSpacing(16)
+        main_row.setSpacing(SPACING["lg"])
 
-        self.camera_card = Card(t("checkin.card.camera"))
+        # Camera card
+        self.camera_card = SectionCard(title=t("checkin.card.camera"))
         self.stack = QStackedWidget()
         self.camera_card.body.addWidget(self.stack)
 
+        # Idle page
         idle = QWidget()
         idle_layout = QVBoxLayout(idle)
         idle_layout.setContentsMargins(0, 0, 0, 0)
-        idle_layout.setSpacing(8)
+        idle_layout.setSpacing(SPACING["sm"])
+
         self.camera_label = QLabel(t("checkin.camera_off"))
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_label.setMinimumHeight(340)
+        self.camera_label.setMinimumHeight(320)
         idle_layout.addWidget(self.camera_label, stretch=1)
+
         self.camera_hint = QLabel(t("checkin.camera_hint"))
         self.camera_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         idle_layout.addWidget(self.camera_hint)
+
         self.stack.addWidget(idle)
 
+        # Result page (player card)
         result = QWidget()
         result_layout = QVBoxLayout(result)
+        result_layout.setContentsMargins(0, 0, 0, 0)
         result_layout.addStretch()
         self.player_card = PlayerCardWidget()
         result_layout.addWidget(self.player_card)
@@ -108,86 +122,95 @@ class ScanScreen(ThemedWidget, QWidget):
         self.stack.setCurrentIndex(0)
         main_row.addWidget(self.camera_card, stretch=3)
 
-        self.recent_card = Card(t("checkin.card.recent"))
+        # Recent check-ins card
+        self.recent_card = SectionCard(title=t("checkin.card.recent"))
         self.recent_list = QListWidget()
         self.recent_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.recent_list.setFrameShape(QListWidget.Shape.NoFrame)
         self.recent_card.body.addWidget(self.recent_list)
         main_row.addWidget(self.recent_card, stretch=2)
 
         root.addLayout(main_row, stretch=1)
 
-        # --- manual search card ---
-        self.search_card = Card(t("checkin.card.manual"))
+        # ---- Manual check-in card ----
+        self.search_card = SectionCard(title=t("checkin.card.manual"))
         search_row = QHBoxLayout()
-        search_row.setSpacing(8)
+        search_row.setSpacing(SPACING["sm"])
+
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(t("checkin.search.placeholder"))
+        self.search_input.setProperty("cssClass", "search")
+        self.search_input.returnPressed.connect(self._on_manual_search)
+
         self.search_button = QPushButton(t("checkin.search.button"))
+        self.search_button.clicked.connect(self._on_manual_search)
+
         search_row.addWidget(self.search_input, stretch=1)
         search_row.addWidget(self.search_button)
         self.search_card.body.addLayout(search_row)
 
         self.results_list = QListWidget()
-        self.results_list.setMaximumHeight(140)
+        self.results_list.setMaximumHeight(160)
         self.results_list.hide()
-        self.search_card.body.addWidget(self.results_list)
-
-        self.search_button.clicked.connect(self._on_manual_search)
-        self.search_input.returnPressed.connect(self._on_manual_search)
         self.results_list.itemClicked.connect(self._on_manual_result_selected)
+        self.search_card.body.addWidget(self.results_list)
 
         root.addWidget(self.search_card)
 
     # ---------- theming ----------
 
     def restyle(self):
-        t_ = theme()
-        self.title.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {t_.color('text')};"
-            f"  background-color: transparent;"
-            f"  font-size: 22px; font-weight: 700;"
-            f"}}"
-        )
-        self.subtitle.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {t_.color('text_secondary')};"
-            f"  background-color: transparent;"
-            f"  font-size: 13px;"
-            f"}}"
-        )
+        tm = theme()
+
         self.camera_hint.setStyleSheet(
             f"QLabel {{"
-            f"  color: {t_.color('text_secondary')};"
+            f"  color: {tm.color('text_secondary')};"
             f"  background-color: transparent;"
             f"  font-size: 12px;"
             f"}}"
         )
         self.camera_label.setStyleSheet(
             f"QLabel {{"
-            f"  background-color: {t_.color('surface_alt')};"
-            f"  color: {t_.color('text_secondary')};"
+            f"  background-color: {tm.color('surface_alt')};"
+            f"  color: {tm.color('text_secondary')};"
             f"  font-size: 15px;"
-            f"  border-radius: {CARD_RADIUS - 2}px;"
-            f"  border: 1px dashed {t_.color('border')};"
+            f"  border-radius: {RADIUS['md']}px;"
+            f"  border: 1px dashed {tm.color('border')};"
             f"}}"
         )
         self.recent_list.setStyleSheet(
             f"QListWidget {{"
-            f"  background: {t_.color('surface')};"
+            f"  background-color: transparent;"
             f"  border: none;"
             f"  padding: 0;"
+            f"  outline: none;"
+            f"}}"
+            f"QListWidget::item {{"
+            f"  padding: 10px 12px;"
+            f"  border-radius: {RADIUS['sm']}px;"
+            f"  color: {tm.color('text')};"
+            f"}}"
+            f"QListWidget::item:hover {{"
+            f"  background-color: {tm.color('surface_alt')};"
+            f"}}"
+        )
+        self.results_list.setStyleSheet(
+            f"QListWidget {{"
+            f"  background-color: {tm.color('surface')};"
+            f"  border: 1px solid {tm.color('border')};"
+            f"  border-radius: {RADIUS['sm']}px;"
+            f"  padding: 4px;"
+            f"  outline: none;"
             f"}}"
             f"QListWidget::item {{"
             f"  padding: 8px 10px;"
-            f"  border-radius: 6px;"
-            f"  color: {t_.color('text')};"
+            f"  border-radius: {RADIUS['xs']}px;"
+            f"  color: {tm.color('text')};"
             f"}}"
             f"QListWidget::item:hover {{"
-            f"  background-color: {t_.color('surface_hover')};"
+            f"  background-color: {tm.color('primary_soft')};"
             f"}}"
         )
-        force_repaint(self)
 
     # ---------- camera ----------
 
@@ -197,7 +220,7 @@ class ScanScreen(ThemedWidget, QWidget):
     def _on_stop_scan_clicked(self):
         self.stop_camera()
         self.camera_label.setText(t("checkin.camera_off"))
-        self.camera_status_pill.set_status(t("checkin.status.camera_off"), "muted")
+        self.camera_status_pill.set_status(t("checkin.status.camera_off"), "neutral")
         self.start_scan_button.setEnabled(True)
         self.stop_scan_button.setEnabled(False)
 
@@ -206,7 +229,7 @@ class ScanScreen(ThemedWidget, QWidget):
         self._cap = cv2.VideoCapture(camera_index)
         if not self._cap.isOpened():
             self.camera_label.setText(t("checkin.camera_unavailable"))
-            self.camera_status_pill.set_status(t("checkin.status.unavailable"), "danger")
+            self.camera_status_pill.set_status(t("checkin.status.unavailable"), "error")
             self._cap = None
             return
         self._camera_timer.start(200)
@@ -253,11 +276,12 @@ class ScanScreen(ThemedWidget, QWidget):
         self.recent_list.clear()
         entries = attendance_service.get_recent_with_names(limit=10)
         if not entries:
-            item = QListWidgetItem(t("checkin.recent.empty"))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.recent_list.addItem(item)
+            placeholder = QListWidgetItem(t("checkin.recent.empty"))
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            placeholder.setForeground(QColor(theme().color("text_secondary")))
+            self.recent_list.addItem(placeholder)
             return
-        t_ = theme()
+        tm = theme()
         for e in entries:
             time_part = e["scan_datetime"].split(" ")[-1][:5]
             if e["result"] == "allowed":
@@ -266,7 +290,7 @@ class ScanScreen(ThemedWidget, QWidget):
                 dot = "✕"
             text = f"{dot}   {time_part}   {e['full_name']}"
             item = QListWidgetItem(text)
-            item.setForeground(QColor(t_.color("text")))
+            item.setForeground(QColor(tm.color("text")))
             self.recent_list.addItem(item)
 
     # ---------- manual search ----------
@@ -285,13 +309,19 @@ class ScanScreen(ThemedWidget, QWidget):
             results.extend(players_repo.search_by_name(query))
 
         if not results:
-            self.results_list.addItem(t("checkin.search.no_match"))
+            item = QListWidgetItem(t("checkin.search.no_match"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            item.setForeground(QColor(theme().color("text_secondary")))
+            self.results_list.addItem(item)
             self.results_list.show()
             return
+
+        tm = theme()
         for player in results:
-            item = QListWidgetItem(f"{player.full_name}   —   ID {player.player_id}")
-            item.setData(Qt.ItemDataRole.UserRole, player.player_id)
-            self.results_list.addItem(item)
+            it = QListWidgetItem(f"{player.full_name}   —   ID {player.player_id}")
+            it.setData(Qt.ItemDataRole.UserRole, player.player_id)
+            it.setForeground(QColor(tm.color("text")))
+            self.results_list.addItem(it)
         self.results_list.show()
 
     def _on_manual_result_selected(self, item: QListWidgetItem):
@@ -304,7 +334,7 @@ class ScanScreen(ThemedWidget, QWidget):
 
     # ---------- pipeline ----------
 
-    def handle_player_id(self, player_id: int, recorded_by: str = RECORDED_BY):
+    def handle_player_id(self, player_id: int, recorded_by: str = None):
         outcome = perform_check_in(player_id, parent_widget=self, recorded_by=recorded_by)
         if outcome is None:
             warn(
@@ -314,9 +344,6 @@ class ScanScreen(ThemedWidget, QWidget):
             )
             return
 
-        # Player already checked in today — show an informational message
-        # and return to idle without touching the attendance log or the
-        # session count.
         if getattr(outcome, "was_duplicate", False):
             warn(
                 self,

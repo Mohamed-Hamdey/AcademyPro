@@ -1,4 +1,4 @@
-"""Update payment dialog — Arabic."""
+"""Update payment dialog — v4 design."""
 
 from datetime import date
 
@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QDate
 
 from ui.theme import theme, ThemedWidget, make_secondary
+from ui.design import SPACING
 from ui.i18n import t
 
 
@@ -16,21 +17,21 @@ class UpdatePaymentDialog(ThemedWidget, QDialog):
     def __init__(self, current_amount=0.0, parent=None):
         QDialog.__init__(self, parent)
         self.setWindowTitle(t("dlg.payment.title"))
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(380)
         self._build_ui(current_amount)
         self._init_theme()
 
     def _build_ui(self, current_amount):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setSpacing(SPACING["md"])
 
         self.intro = QLabel(t("dlg.payment.intro"))
         self.intro.setWordWrap(True)
         layout.addWidget(self.intro)
 
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(SPACING["sm"])
         self.amount_input = QDoubleSpinBox()
         self.amount_input.setMaximum(100000)
         self.amount_input.setPrefix("EGP ")
@@ -46,6 +47,7 @@ class UpdatePaymentDialog(ThemedWidget, QDialog):
         layout.addLayout(form)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(SPACING["sm"])
         cancel_button = QPushButton(t("dlg.payment.cancel"))
         make_secondary(cancel_button)
         save_button = QPushButton(t("dlg.payment.save"))
@@ -58,9 +60,13 @@ class UpdatePaymentDialog(ThemedWidget, QDialog):
         layout.addLayout(button_row)
 
     def restyle(self):
-        t_ = theme()
+        tm = theme()
         self.intro.setStyleSheet(
-            f"color: {t_.color('text_secondary')}; font-size: 12px;"
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-size: 12px;"
+            f"}}"
         )
 
     def get_values(self):

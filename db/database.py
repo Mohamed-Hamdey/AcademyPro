@@ -12,7 +12,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from paths import AppPaths, user_data_root
-SCHEMA_PATH = AppPaths.schema_file()
+
 DB_PATH = AppPaths.database()
 
 
@@ -25,19 +25,17 @@ def get_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     """
-    Create tables if they don't exist yet.
+    Initialize the database.
+
+    For fresh installs, runs all migrations from scratch.
+    For existing installs, applies only pending migrations.
     Safe to call every time the app starts.
     """
-    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
-        schema = f.read()
-
-    conn = get_connection()
-    try:
-        conn.executescript(schema)
-        conn.commit()
-    finally:
-        conn.close()
-
+    # Run migrations (creates the schema_version table and applies any
+    # pending migrations). The old schema.sql file is no longer used —
+    # migrations are the source of truth from v2 onwards.
+    from migrations.runner import run_migrations
+    run_migrations()
 
 if __name__ == "__main__":
     init_db()

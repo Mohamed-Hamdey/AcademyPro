@@ -1,5 +1,24 @@
 """
-Progress panel — Arabic.
+Progress panel — v4 design.
+
+Layout:
+    ┌────────────────────────────────────────────────────────┐
+    │  ┌─ KPI ─┐  ┌─ KPI ─┐  ┌─ KPI ─┐                       │
+    │  │ Total │  │ Cycle │  │ Deny  │                       │
+    │  └───────┘  └───────┘  └───────┘                       │
+    │                                                        │
+    │  ┌─ Monthly Attendance ────────────────────────────┐   │
+    │  │  Month: [September 2025 ▾]                       │   │
+    │  │  ┌────┬────┬────┬────┬────┬────┬────┐           │   │
+    │  │  │ 1✓ │ 3✓ │ 5✕ │ 8— │ …  │    │    │           │   │
+    │  │  └────┴────┴────┴────┴────┴────┴────┘           │   │
+    │  └──────────────────────────────────────────────────┘   │
+    │                                                        │
+    │  ┌─ Subscription History ──────────────────────────┐   │
+    │  │  Plan    Start        Expiry       Status       │   │
+    │  │  ...                                             │   │
+    │  └──────────────────────────────────────────────────┘   │
+    └────────────────────────────────────────────────────────┘
 """
 
 import os
@@ -8,7 +27,7 @@ import calendar
 from datetime import date, datetime
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QGridLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
 )
 from PyQt6.QtCore import Qt
@@ -17,9 +36,11 @@ from PyQt6.QtGui import QColor
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_plan, get_plan_label
 from services import subscription_service, attendance_service
+from ui.components import SectionCard, KpiCard, Toolbar, EmptyState
 from ui.theme import theme, ThemedWidget
-from ui.widgets import StatCard
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
+
 
 MONTH_KEYS = [
     "month.january", "month.february", "month.march", "month.april",
@@ -47,22 +68,29 @@ class ProgressPanel(ThemedWidget, QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setSpacing(14)
+        root.setContentsMargins(0, SPACING["lg"], 0, 0)
+        root.setSpacing(SPACING["lg"])
 
-        counters_row = QHBoxLayout()
-        counters_row.setSpacing(12)
-        self.total_card = StatCard(t("progress.total"), "0", accent="primary")
-        self.cycle_card = StatCard(t("progress.cycle"), "0", accent="success")
-        self.denial_card = StatCard(t("progress.denials"), "0", accent="danger")
+        # ---------- KPI row ----------
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(SPACING["md"])
+
+        self.total_card = KpiCard(t("progress.total"), "0")
+        self.cycle_card = KpiCard(t("progress.cycle"), "0")
+        self.denial_card = KpiCard(t("progress.denials"), "0")
+
         for c in (self.total_card, self.cycle_card, self.denial_card):
-            counters_row.addWidget(c, stretch=1)
-        root.addLayout(counters_row)
+            kpi_row.addWidget(c, stretch=1)
 
-        month_box = QGroupBox(t("progress.monthly_group"))
-        month_layout = QVBoxLayout(month_box)
+        root.addLayout(kpi_row)
 
-        nav_row = QHBoxLayout()
+        # ---------- Monthly attendance card ----------
+        self.month_card = SectionCard(title=t("progress.monthly_group"))
+
+        # Month selector inside a Toolbar (RTL-aware)
+        self.month_toolbar = Toolbar()
         self.month_selector = QComboBox()
+
         today = date.today()
         self._month_options = []
         for i in range(5, -1, -1):
@@ -77,18 +105,32 @@ class ProgressPanel(ThemedWidget, QWidget):
         self.month_selector.currentIndexChanged.connect(self._render_month_grid)
 
         self.month_label = QLabel(t("progress.month_label"))
-        nav_row.addWidget(self.month_label)
-        nav_row.addWidget(self.month_selector)
-        nav_row.addStretch()
-        month_layout.addLayout(nav_row)
+        self.month_toolbar.add_leading(self.month_label)
+        self.month_toolbar.add_leading(self.month_selector)
 
+        self.month_card.body.addWidget(self.month_toolbar)
+
+        # Grid container for the day cells
         self.month_grid_container = QWidget()
         self.month_grid_layout = QGridLayout(self.month_grid_container)
-        month_layout.addWidget(self.month_grid_container)
-        root.addWidget(month_box)
+        self.month_grid_layout.setHorizontalSpacing(SPACING["xs"])
+        self.month_grid_layout.setVerticalSpacing(SPACING["xs"])
+        self.month_grid_layout.setContentsMargins(0, SPACING["sm"], 0, 0)
+        self.month_card.body.addWidget(self.month_grid_container)
 
-        history_box = QGroupBox(t("progress.history_group"))
-        history_layout = QVBoxLayout(history_box)
+        # Empty-state widget shown when there is no active subscription
+        self.month_empty = EmptyState(
+            icon="📅",
+            message=t("progress.month.no_sub_note"),
+        )
+        self.month_empty.hide()
+        self.month_card.body.addWidget(self.month_empty)
+
+        root.addWidget(self.month_card)
+
+        # ---------- Subscription history card ----------
+        self.history_card = SectionCard(title=t("progress.history_group"))
+
         self.history_table = QTableWidget(0, 4)
         self.history_table.setHorizontalHeaderLabels([
             t("progress.history.plan"),
@@ -101,13 +143,44 @@ class ProgressPanel(ThemedWidget, QWidget):
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.history_table.setAlternatingRowColors(True)
         self.history_table.setShowGrid(False)
-        history_layout.addWidget(self.history_table)
-        root.addWidget(history_box)
+        self.history_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.history_card.body.addWidget(self.history_table)
+
+        root.addWidget(self.history_card)
+
+        # Add a stretcher so the panel doesn't get squeezed
+        root.addStretch()
+
+    # ---------- theme ----------
 
     def restyle(self):
+        tm = theme()
+
+        # Explicit colorization of the KPI values, since KpiCard's
+        # default value color is neutral. We want:
+        #   total   → primary   (informational)
+        #   cycle   → success   (progress)
+        #   denials → danger    (attention)
+        self._style_kpi_value(self.total_card, tm.color("primary"))
+        self._style_kpi_value(self.cycle_card, tm.color("success"))
+        self._style_kpi_value(self.denial_card, tm.color("danger"))
+
         if hasattr(self, "_month_options"):
             self._render_month_grid()
         self._render_history()
+
+    @staticmethod
+    def _style_kpi_value(kpi: KpiCard, color: str):
+        kpi.value_label.setStyleSheet(
+            f"QLabel#kpiValue {{"
+            f"  color: {color};"
+            f"  background-color: transparent;"
+            f"  font-size: 22px;"
+            f"  font-weight: 700;"
+            f"}}"
+        )
+
+    # ---------- data ----------
 
     def refresh(self):
         attendance = attendance_service.get_for_player(self.player_id)
@@ -134,7 +207,7 @@ class ProgressPanel(ThemedWidget, QWidget):
     def _render_history(self):
         history = subscription_service.get_history(self.player_id)
         self.history_table.setRowCount(len(history))
-        t_ = theme()
+        tm = theme()
         for i, sub in enumerate(history):
             self.history_table.setItem(i, 0, QTableWidgetItem(get_plan_label(sub.plan_type)))
             self.history_table.setItem(i, 1, QTableWidgetItem(sub.start_date))
@@ -149,11 +222,12 @@ class ProgressPanel(ThemedWidget, QWidget):
             status_item = QTableWidgetItem(t(status_key))
             color_token = {
                 "active": "success", "expired": "danger", "suspended": "warning",
-            }.get(sub.status, "muted")
-            status_item.setForeground(QColor(t_.color(color_token)))
+            }.get(sub.status, "text_secondary")
+            status_item.setForeground(QColor(tm.color(color_token)))
             self.history_table.setItem(i, 3, status_item)
 
     def _render_month_grid(self):
+        # Clear existing cells
         while self.month_grid_layout.count():
             item = self.month_grid_layout.takeAt(0)
             w = item.widget()
@@ -163,24 +237,33 @@ class ProgressPanel(ThemedWidget, QWidget):
         if not hasattr(self, "_month_options"):
             return
 
-        t_ = theme()
+        tm = theme()
         year, month = self._month_options[self.month_selector.currentIndex()]
 
         active_sub = getattr(self, "_active_sub_cache", None)
         attendance = getattr(self, "_attendance_cache", [])
+
+        # Toggle between the grid and the empty state
+        if not active_sub:
+            self.month_grid_container.hide()
+            self.month_empty.show()
+            return
+        else:
+            self.month_grid_container.show()
+            self.month_empty.hide()
+
         attended_dates = {
             datetime.fromisoformat(e.scan_datetime).date()
             for e in attendance if e.result == "allowed"
         }
 
-        allowed_weekday_names = set()
-        if active_sub:
-            plan = get_plan(active_sub.plan_type)
-            allowed_weekday_names = set(plan["allowed_days"])
+        plan = get_plan(active_sub.plan_type)
+        allowed_weekday_names = set(plan["allowed_days"])
 
         today = date.today()
         days_in_month = calendar.monthrange(year, month)[1]
 
+        # 7 columns max, flow left-to-right (Qt mirrors in RTL)
         col = 0
         row = 0
         max_cols = 7
@@ -191,32 +274,33 @@ class ProgressPanel(ThemedWidget, QWidget):
                 continue
 
             if d in attended_dates:
-                text, color = f"{day_num} ✓", t_.color("success")
-                bg = t_.color("success_soft")
+                text = f"{day_num}  ✓"
+                color = tm.color("success")
+                bg = tm.color("success_soft")
             elif d < today:
-                text, color = f"{day_num} ✕", t_.color("danger")
-                bg = t_.color("danger_soft")
+                text = f"{day_num}  ✕"
+                color = tm.color("danger")
+                bg = tm.color("danger_soft")
             else:
-                text, color = f"{day_num} —", t_.color("muted")
-                bg = t_.color("surface_alt")
+                text = f"{day_num}  —"
+                color = tm.color("text_secondary")
+                bg = tm.color("surface_alt")
 
             cell = QLabel(text)
             cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cell.setStyleSheet(
-                f"border: 1px solid {t_.color('border')};"
-                f"border-radius: 6px; padding: 10px;"
-                f"color: {color}; font-weight: 700;"
-                f"background-color: {bg};"
+                f"QLabel {{"
+                f"  border: 1px solid {tm.color('border')};"
+                f"  border-radius: {RADIUS['sm']}px;"
+                f"  padding: 10px 8px;"
+                f"  color: {color};"
+                f"  font-weight: 600;"
+                f"  font-size: 13px;"
+                f"  background-color: {bg};"
+                f"}}"
             )
             self.month_grid_layout.addWidget(cell, row, col)
             col += 1
             if col >= max_cols:
                 col = 0
                 row += 1
-
-        if not active_sub:
-            note = QLabel(t("progress.month.no_sub_note"))
-            note.setStyleSheet(
-                f"color: {t_.color('muted')}; font-style: italic; padding: 8px;"
-            )
-            self.month_grid_layout.addWidget(note, row + 1, 0, 1, max_cols)

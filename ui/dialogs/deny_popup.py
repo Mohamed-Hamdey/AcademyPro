@@ -1,11 +1,17 @@
-"""Deny popup — Arabic."""
+"""Deny popup — v4 design."""
+
+import os
+import sys
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QFrame,
 )
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from ui.message_box import warn
-from ui.theme import theme, ThemedWidget, make_danger, make_secondary, CARD_RADIUS
+from ui.theme import theme, ThemedWidget, make_danger, make_secondary
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
@@ -24,22 +30,25 @@ class DenyPopup(ThemedWidget, QDialog):
 
     def _build_ui(self, player_name, reason):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 22, 22, 22)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setSpacing(SPACING["md"])
 
         self.name_label = QLabel(player_name)
+        self.name_label.setWordWrap(True)
         layout.addWidget(self.name_label)
 
+        # Reason box
         reason_box = QFrame()
         reason_box.setObjectName("reasonBox")
         rl = QVBoxLayout(reason_box)
-        rl.setContentsMargins(14, 12, 14, 12)
+        rl.setContentsMargins(SPACING["md"], SPACING["md"], SPACING["md"], SPACING["md"])
         self.reason_label = QLabel(t("dlg.deny.reason_prefix", reason=reason))
         self.reason_label.setWordWrap(True)
         rl.addWidget(self.reason_label)
         self.reason_box = reason_box
         layout.addWidget(reason_box)
 
+        # Override note
         self.note_hint = QLabel(t("dlg.deny.note_hint"))
         layout.addWidget(self.note_hint)
 
@@ -47,8 +56,9 @@ class DenyPopup(ThemedWidget, QDialog):
         self.note_input.setPlaceholderText(t("dlg.deny.note_placeholder"))
         layout.addWidget(self.note_input)
 
+        # Buttons
         button_row = QHBoxLayout()
-        button_row.setSpacing(8)
+        button_row.setSpacing(SPACING["sm"])
         self.dismiss_button = QPushButton(t("dlg.deny.dismiss"))
         make_secondary(self.dismiss_button)
         self.override_button = QPushButton(t("dlg.deny.override"))
@@ -63,22 +73,37 @@ class DenyPopup(ThemedWidget, QDialog):
         self.dismiss_button.clicked.connect(self.reject)
 
     def restyle(self):
-        t_ = theme()
+        tm = theme()
         self.name_label.setStyleSheet(
-            f"color: {t_.color('text')}; font-size: 18px; font-weight: 700;"
+            f"QLabel {{"
+            f"  color: {tm.color('text')};"
+            f"  background-color: transparent;"
+            f"  font-size: 18px;"
+            f"  font-weight: 700;"
+            f"}}"
         )
         self.reason_box.setStyleSheet(
             f"QFrame#reasonBox {{"
-            f"  background-color: {t_.color('danger_soft')};"
-            f"  border: 1px solid {t_.color('danger')};"
-            f"  border-radius: {CARD_RADIUS - 4}px;"
+            f"  background-color: {tm.color('danger_soft')};"
+            f"  border: 1px solid {tm.color('danger')};"
+            f"  border-radius: {RADIUS['sm']}px;"
             f"}}"
         )
         self.reason_label.setStyleSheet(
-            f"color: {t_.color('danger')}; font-size: 14px; font-weight: 600;"
+            f"QLabel {{"
+            f"  color: {tm.color('danger')};"
+            f"  background-color: transparent;"
+            f"  font-size: 14px;"
+            f"  font-weight: 600;"
+            f"}}"
         )
         self.note_hint.setStyleSheet(
-            f"color: {t_.color('text_secondary')}; font-size: 12px; font-weight: 600;"
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-size: 12px;"
+            f"  font-weight: 600;"
+            f"}}"
         )
 
     def _on_override_clicked(self):

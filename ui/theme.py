@@ -1,19 +1,11 @@
 """
-Global app theme + runtime light/dark mode (v3.1).
+Global app theme (v4.1) — driven by ui/design.py tokens.
 
-Rules:
-  1. No hex color literals anywhere outside this file.
-  2. Anywhere a widget needs a color, it asks theme().color("token").
-  3. Any widget whose styling depends on the mode subclasses ThemedWidget
-     and implements restyle().
-
-The sidebar (nav) is intentionally always dark in both modes — it reads as
-"chrome" rather than "content", the way VS Code / Slack / Discord do it.
-
-v3.1 adds sweep_restyle(): on every theme flip, the app walks the entire
-widget tree and calls restyle() on any widget that defines it. This is the
-guaranteed fix for stuck widgets — it doesn't depend on listeners being
-alive, or on widgets remembering to register themselves.
+Fixes from v4.0:
+  * build_stylesheet now includes a defensive `_safe()` helper so a
+    missing token doesn't crash the whole QSS build.
+  * Explicit high-specificity rules for top bar / sidebar text so
+    nothing falls through to a wrong color.
 """
 
 from __future__ import annotations
@@ -27,102 +19,16 @@ from PyQt6.QtWidgets import (
     QGroupBox, QTabWidget, QTableWidget, QHeaderView,
 )
 
+from ui.design import tokens, LIGHT, DARK, SPACING, RADIUS, TYPOGRAPHY
+
 
 # ---------------------------------------------------------------------------
-# Palettes
+# Design constants
 # ---------------------------------------------------------------------------
-
-LIGHT = {
-    "primary":         "#3B5BA5",
-    "primary_hover":   "#2E4880",
-    "primary_pressed": "#243869",
-    "primary_soft":    "#E5EAF5",
-
-    "danger":          "#B3261E",
-    "danger_hover":    "#8C1D18",
-    "danger_pressed":  "#6B1512",
-    "danger_soft":     "#FBEAE9",
-
-    "success":         "#1F7A4D",
-    "success_soft":    "#E4F3EB",
-
-    "warning":         "#B5730A",
-    "warning_soft":    "#FBF1DF",
-
-    "muted":           "#8A8E96",
-
-    "bg":              "#F5F6F8",
-    "surface":         "#FFFFFF",
-    "surface_alt":     "#FAFBFC",
-    "surface_hover":   "#ECEEF1",
-    "surface_pressed": "#E0E2E6",
-    "border":          "#E3E5E9",
-    "divider":         "#EEF0F2",
-    "shadow":          "#CBD0D8",
-
-    "text":            "#1A1D23",
-    "text_secondary":  "#5B6270",
-    "text_disabled":   "#C3C6CC",
-    "text_on_accent":  "#FFFFFF",
-
-    "btn_disabled_bg":   "#D3D5DA",
-    "btn_disabled_text": "#8A8E96",
-
-    "nav_bg":          "#EEF1F7",
-    "nav_item":        "#5B6270",
-    "nav_item_hover":  "#E3E7EE",
-    "nav_item_sel":    "#DDE3EC",
-    "nav_text_sel":    "#1A1D23",
-    "nav_brand":       "#1A1D23",
-    "nav_hairline":    "#DDE2EC",
-}
-
-DARK = {
-    "primary":         "#5B8DEF",
-    "primary_hover":   "#4A7CDB",
-    "primary_pressed": "#3A66BE",
-    "primary_soft":    "#1F2A44",
-
-    "danger":          "#F87171",
-    "danger_hover":    "#EF5A5A",
-    "danger_pressed":  "#D94848",
-    "danger_soft":     "#3A1F22",
-
-    "success":         "#34D399",
-    "success_soft":    "#16332A",
-
-    "warning":         "#FBBF24",
-    "warning_soft":    "#3A2F14",
-
-    "muted":           "#9AA3B5",
-
-    "bg":              "#12151C",
-    "surface":         "#1B1F2A",
-    "surface_alt":     "#232838",
-    "surface_hover":   "#2A3042",
-    "surface_pressed": "#323A50",
-    "border":          "#2E3446",
-    "divider":         "#262C3B",
-    "shadow":          "#0A0C10",
-
-    "text":            "#E8ECF4",
-    "text_secondary":  "#9AA3B5",
-    "text_disabled":   "#555C6E",
-    "text_on_accent":  "#FFFFFF",
-
-    "btn_disabled_bg":   "#2A3042",
-    "btn_disabled_text": "#555C6E",
-
-    "nav_bg":          "#0F1218",
-    "nav_item":        "#9AA3B5",
-    "nav_item_hover":  "#1A1F2A",
-    "nav_item_sel":    "#1F2636",
-    "nav_text_sel":    "#FFFFFF",
-    "nav_brand":       "#FFFFFF",
-    "nav_hairline":    "#1C212C",
-}
-
-PALETTES = {"light": LIGHT, "dark": DARK}
+CARD_RADIUS   = RADIUS["lg"]
+BUTTON_RADIUS = RADIUS["sm"]
+GUTTER        = SPACING["lg"]
+SECTION_GAP   = SPACING["xl"]
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +44,7 @@ DANGER_PRESSED  = LIGHT["danger_pressed"]
 
 SUCCESS = LIGHT["success"]
 WARNING = LIGHT["warning"]
-MUTED   = LIGHT["muted"]
+MUTED   = LIGHT["neutral"]
 
 BG             = LIGHT["bg"]
 SURFACE        = LIGHT["surface"]
@@ -148,274 +54,407 @@ TEXT_SECONDARY = LIGHT["text_secondary"]
 
 
 # ---------------------------------------------------------------------------
-# Design constants
-# ---------------------------------------------------------------------------
-CARD_RADIUS   = 12
-BUTTON_RADIUS = 8
-PILL_RADIUS   = 999
-GUTTER        = 16
-SECTION_GAP   = 24
-
-
-# ---------------------------------------------------------------------------
-# Stylesheet
+# Stylesheet builder
 # ---------------------------------------------------------------------------
 
-def build_stylesheet(p: dict) -> str:
+def _safe(palette: dict, key: str, fallback: str) -> str:
+    """Return palette[key] or fallback if the token isn't defined."""
+    return palette.get(key, fallback)
+
+
+def build_stylesheet(mode: str) -> str:
+    p = LIGHT if mode == "light" else DARK
+
+    # Guard against accidentally-missing tokens by pre-resolving everything
+    # through _safe(). If a token is missing, we fall back to a light-mode
+    # default rather than crashing.
+    def c(key, fallback):
+        return _safe(p, key, fallback)
+
+    fam = tokens.font_family()
+    body_size = TYPOGRAPHY["body"]["size"]
+    table_size = TYPOGRAPHY["table"]["size"]
+    label_size = TYPOGRAPHY["label"]["size"]
+    button_size = TYPOGRAPHY["button"]["size"]
+    btn_r = RADIUS["sm"]
+    input_r = RADIUS["sm"]
+    card_r = RADIUS["lg"]
+
+    # Pre-resolve every token we use
+    text             = c("text", "#172033")
+    text_secondary   = c("text_secondary", "#64748B")
+    text_disabled    = c("text_disabled", "#94A3B8")
+    text_on_primary  = c("text_on_primary", "#FFFFFF")
+
+    bg               = c("bg", "#F5F7FA")
+    surface          = c("surface", "#FFFFFF")
+    surface_alt      = c("surface_alt", "#F8FAFC")
+    border           = c("border", "#DCE3EC")
+    divider          = c("divider", "#E8EDF3")
+
+    primary          = c("primary", "#2563EB")
+    primary_hover    = c("primary_hover", "#1D4ED8")
+    primary_pressed  = c("primary_pressed", "#1E40AF")
+    primary_soft     = c("primary_soft", "#DBEAFE")
+
+    danger           = c("danger", "#DC2626")
+    danger_hover     = c("danger_hover", "#B91C1C")
+    danger_pressed   = c("danger_pressed", "#991B1B")
+
+    btn_secondary_bg       = c("btn_secondary_bg", surface)
+    btn_secondary_hover    = c("btn_secondary_hover", "#F1F5F9")
+    btn_secondary_pressed  = c("btn_secondary_pressed", "#E2E8F0")
+    btn_secondary_border   = c("btn_secondary_border", border)
+    btn_disabled_bg        = c("btn_disabled_bg", "#E2E8F0")
+    btn_disabled_text      = c("btn_disabled_text", "#94A3B8")
+
+    topbar_bg        = c("topbar_bg", surface)
+    topbar_border    = c("topbar_border", border)
+    search_bg        = c("search_bg", "#F1F5F9")
+    search_border    = c("search_border", "#E2E8F0")
+
+    nav_bg           = c("nav_bg", "#EEF2F7")
+    nav_item         = c("nav_item", "#64748B")
+    nav_item_hover   = c("nav_item_hover", "#E2E8F0")
+    nav_item_sel     = c("nav_item_sel", "#DBEAFE")
+    nav_item_sel_text= c("nav_item_sel_text", "#1E40AF")
+    nav_brand        = c("nav_brand", "#172033")
+    nav_hairline     = c("nav_hairline", "#DCE3EC")
+
     return f"""
 * {{
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    font-size: 13px;
-    color: {p['text']};
+    font-family: {fam};
+    font-size: {body_size}px;
+    color: {text};
 }}
 
 QMainWindow, QDialog {{
-    background-color: {p['bg']};
+    background-color: {bg};
 }}
 
 QWidget {{
     background-color: transparent;
 }}
+/* ==================== Menus (QMenu, popup menus) ==================== */
+QMenu {{
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {border};
+    border-radius: {RADIUS['sm']}px;
+    padding: 6px;
+}}
 
+QMenu::item {{
+    background-color: transparent;
+    color: {text};
+    padding: 8px 24px 8px 16px;
+    border-radius: {RADIUS['xs']}px;
+    margin: 1px 2px;
+}}
+
+QMenu::item:selected {{
+    background-color: {primary_soft};
+    color: {text};
+}}
+
+QMenu::item:disabled {{
+    color: {text_disabled};
+}}
+
+QMenu::separator {{
+    height: 1px;
+    background-color: {divider};
+    margin: 6px 8px;
+}}
+/* ==================== Top bar ==================== */
+QWidget#topBar {{
+    background-color: {topbar_bg};
+    border-bottom: 1px solid {topbar_border};
+}}
+
+QWidget#topBar QLabel {{
+    color: {text};
+    background-color: transparent;
+}}
+
+QLabel#topBarTitle {{
+    color: {text};
+    background-color: transparent;
+    font-size: 15px;
+    font-weight: 600;
+}}
+
+QWidget#topBar QLineEdit {{
+    background-color: {search_bg};
+    border: 1px solid {search_border};
+    border-radius: {RADIUS['md']}px;
+    padding: 6px 12px;
+    color: {text};
+    min-height: 24px;
+    font-size: 13px;
+}}
+
+QWidget#topBar QLineEdit:focus {{
+    background-color: {surface};
+    border: 1px solid {primary};
+}}
+
+/* ==================== Sidebar ==================== */
+QWidget#sidebar {{
+    background-color: {nav_bg};
+}}
+
+QListWidget#navList {{
+    background-color: {nav_bg};
+    border: none;
+    border-radius: 0px;
+    padding: 8px 6px;
+    outline: none;
+}}
+
+QListWidget#navList::item {{
+    color: {nav_item};
+    padding: 10px 14px;
+    border-radius: {RADIUS['md']}px;
+    border: none;
+    margin: 2px 4px;
+    font-weight: 500;
+    font-size: 14px;
+}}
+
+QListWidget#navList::item:hover:!selected {{
+    background-color: {nav_item_hover};
+    color: {nav_brand};
+}}
+
+QListWidget#navList::item:selected {{
+    background-color: {nav_item_sel};
+    color: {nav_item_sel_text};
+    font-weight: 600;
+}}
+
+/* ==================== Workspace ==================== */
+QWidget#workspace {{
+    background-color: {bg};
+}}
+
+/* ==================== Group boxes ==================== */
 QGroupBox {{
     font-weight: 600;
-    font-size: 12px;
-    color: {p['text_secondary']};
-    border: 1px solid {p['border']};
-    border-radius: {CARD_RADIUS}px;
+    font-size: {label_size + 1}px;
+    color: {text_secondary};
+    border: 1px solid {border};
+    border-radius: {card_r}px;
     margin-top: 16px;
     padding: 18px 14px 14px 14px;
-    background-color: {p['surface']};
+    background-color: {surface};
 }}
 
 QGroupBox::title {{
     subcontrol-origin: margin;
     left: 14px;
     padding: 0 8px;
-    color: {p['text_secondary']};
-    background-color: {p['surface']};
+    color: {text_secondary};
+    background-color: {surface};
 }}
 
 QLabel {{
     background-color: transparent;
-    color: {p['text']};
+    color: {text};
 }}
 
+/* ==================== Buttons ==================== */
 QPushButton {{
-    background-color: {p['primary']};
-    color: {p['text_on_accent']};
+    background-color: {primary};
+    color: {text_on_primary};
     border: none;
-    border-radius: {BUTTON_RADIUS}px;
-    padding: 9px 18px;
+    border-radius: {btn_r}px;
+    padding: 8px 16px;
     font-weight: 600;
-    min-height: 18px;
+    font-size: {button_size}px;
+    min-height: 22px;
 }}
 
-QPushButton:hover   {{ background-color: {p['primary_hover']}; }}
-QPushButton:pressed {{ background-color: {p['primary_pressed']}; }}
+QPushButton:hover   {{ background-color: {primary_hover}; }}
+QPushButton:pressed {{ background-color: {primary_pressed}; }}
 QPushButton:focus   {{ outline: none; }}
 
 QPushButton:disabled {{
-    background-color: {p['btn_disabled_bg']};
-    color: {p['btn_disabled_text']};
+    background-color: {btn_disabled_bg};
+    color: {btn_disabled_text};
 }}
 
 QPushButton[cssClass="danger"] {{
-    background-color: {p['danger']};
+    background-color: {danger};
+    color: {text_on_primary};
 }}
-QPushButton[cssClass="danger"]:hover   {{ background-color: {p['danger_hover']}; }}
-QPushButton[cssClass="danger"]:pressed {{ background-color: {p['danger_pressed']}; }}
+QPushButton[cssClass="danger"]:hover   {{ background-color: {danger_hover}; }}
+QPushButton[cssClass="danger"]:pressed {{ background-color: {danger_pressed}; }}
 QPushButton[cssClass="danger"]:disabled {{
-    background-color: {p['btn_disabled_bg']};
-    color: {p['btn_disabled_text']};
+    background-color: {btn_disabled_bg};
+    color: {btn_disabled_text};
 }}
 
 QPushButton[cssClass="secondary"] {{
-    background-color: {p['surface']};
-    color: {p['text']};
-    border: 1px solid {p['border']};
+    background-color: {btn_secondary_bg};
+    color: {text};
+    border: 1px solid {btn_secondary_border};
 }}
-QPushButton[cssClass="secondary"]:hover   {{ background-color: {p['surface_hover']}; }}
-QPushButton[cssClass="secondary"]:pressed {{ background-color: {p['surface_pressed']}; }}
+QPushButton[cssClass="secondary"]:hover   {{ background-color: {btn_secondary_hover}; }}
+QPushButton[cssClass="secondary"]:pressed {{ background-color: {btn_secondary_pressed}; }}
 QPushButton[cssClass="secondary"]:disabled {{
-    background-color: {p['surface_alt']};
-    color: {p['text_disabled']};
-    border: 1px solid {p['border']};
+    background-color: {btn_disabled_bg};
+    color: {btn_disabled_text};
+    border: 1px solid {border};
 }}
 
 QPushButton[cssClass="ghost"] {{
     background-color: transparent;
-    color: {p['text_secondary']};
+    color: {text_secondary};
     border: none;
     padding: 6px 10px;
 }}
 QPushButton[cssClass="ghost"]:hover {{
-    background-color: {p['surface_hover']};
-    color: {p['text']};
+    background-color: {btn_secondary_hover};
+    color: {text};
 }}
 
+/* ==================== Inputs ==================== */
 QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox, QTextEdit {{
-    border: 1px solid {p['border']};
-    border-radius: {BUTTON_RADIUS}px;
+    border: 1px solid {border};
+    border-radius: {input_r}px;
     padding: 8px 12px;
-    background-color: {p['surface']};
-    color: {p['text']};
-    selection-background-color: {p['primary']};
-    selection-color: {p['text_on_accent']};
-    min-height: 18px;
+    background-color: {surface};
+    color: {text};
+    selection-background-color: {primary};
+    selection-color: {text_on_primary};
+    min-height: 22px;
+    font-size: {body_size}px;
 }}
 
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus,
 QDoubleSpinBox:focus, QSpinBox:focus, QTextEdit:focus {{
-    border: 1px solid {p['primary']};
+    border: 1px solid {primary};
 }}
 
-QLineEdit::placeholder {{ color: {p['text_secondary']}; }}
+QLineEdit::placeholder {{ color: {text_secondary}; }}
 
 QComboBox::drop-down {{
-    border: none;
-    width: 22px;
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 24px;
+    border-left: 1px solid {border};
 }}
+
 QComboBox::down-arrow {{
     image: none;
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
-    border-top: 5px solid {p['text_secondary']};
+    border-top: 5px solid {text_secondary};
     margin-right: 8px;
 }}
 
 QComboBox QAbstractItemView {{
-    background-color: {p['surface']};
-    color: {p['text']};
-    border: 1px solid {p['border']};
-    border-radius: {BUTTON_RADIUS}px;
-    selection-background-color: {p['primary_soft']};
-    selection-color: {p['text']};
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {border};
+    border-radius: {input_r}px;
+    selection-background-color: {primary_soft};
+    selection-color: {text};
     padding: 4px;
 }}
 
+/* ==================== Tables ==================== */
 QTableWidget {{
-    border: 1px solid {p['border']};
-    border-radius: {CARD_RADIUS}px;
-    gridline-color: {p['divider']};
-    background-color: {p['surface']};
-    alternate-background-color: {p['surface_alt']};
-    selection-background-color: {p['primary_soft']};
-    selection-color: {p['text']};
+    border: 1px solid {border};
+    border-radius: {card_r}px;
+    gridline-color: {divider};
+    background-color: {surface};
+    alternate-background-color: {surface_alt};
+    selection-background-color: {primary_soft};
+    selection-color: {text};
     outline: none;
+    font-size: {table_size}px;
 }}
 
 QTableWidget::item {{
-    padding: 8px 10px;
+    padding: 10px 12px;
     border: none;
 }}
 
 QHeaderView::section {{
-    background-color: {p['surface_alt']};
-    color: {p['text_secondary']};
+    background-color: {surface_alt};
+    color: {text_secondary};
     padding: 10px;
     border: none;
-    border-bottom: 1px solid {p['border']};
+    border-bottom: 1px solid {border};
     font-weight: 600;
-    font-size: 12px;
+    font-size: {label_size}px;
 }}
 
+/* ==================== Tabs ==================== */
 QTabWidget::pane {{
-    border: 1px solid {p['border']};
-    border-radius: {CARD_RADIUS}px;
-    background-color: {p['surface']};
+    border: 1px solid {border};
+    border-radius: {card_r}px;
+    background-color: {surface};
     top: -1px;
 }}
 
 QTabBar::tab {{
     background-color: transparent;
-    color: {p['text_secondary']};
+    color: {text_secondary};
     padding: 10px 20px;
     border-bottom: 2px solid transparent;
     margin-right: 4px;
     font-weight: 600;
+    font-size: {body_size}px;
 }}
 
 QTabBar::tab:selected {{
-    color: {p['primary']};
-    border-bottom: 2px solid {p['primary']};
+    color: {primary};
+    border-bottom: 2px solid {primary};
 }}
 
-QTabBar::tab:hover:!selected {{ color: {p['text']}; }}
+QTabBar::tab:hover:!selected {{ color: {text}; }}
 
+/* ==================== Lists ==================== */
 QListWidget {{
-    border: 1px solid {p['border']};
-    border-radius: {CARD_RADIUS}px;
-    background-color: {p['surface']};
-    color: {p['text']};
+    border: 1px solid {border};
+    border-radius: {card_r}px;
+    background-color: {surface};
+    color: {text};
     outline: none;
     padding: 4px;
 }}
 
 QListWidget::item {{
     padding: 10px 10px;
-    border-radius: 6px;
+    border-radius: {RADIUS['sm']}px;
     margin: 1px 2px;
+    color: {text};
 }}
 
 QListWidget::item:hover {{
-    background-color: {p['surface_hover']};
+    background-color: {surface_alt};
 }}
 
 QListWidget::item:selected {{
-    background-color: {p['primary_soft']};
-    color: {p['text']};
+    background-color: {primary_soft};
+    color: {text};
 }}
 
-QListWidget#navList {{
-    background-color: {p['nav_bg']};
-    border: none;
-    border-radius: 0px;
-    padding: 8px 4px;
-}}
-
-QListWidget#navList::item {{
-    color: {p['nav_item']};
-    padding: 10px 14px;
-    border-radius: 8px;
-    border: none;
-    margin: 2px 2px;
-    font-weight: 500;
-    font-size: 15px;
-}}
-
-/* Collapsed rail: tighter items so the glyph centers cleanly. */
-QListWidget#navList[collapsed="true"] {{
-    padding: 8px 4px;
-}}
-
-QListWidget#navList[collapsed="true"]::item {{
-    padding: 0px;
-    margin: 4px 6px;
-    font-size: 20px;
-}}
-QListWidget#navList::item:hover:!selected {{
-    background-color: {p['nav_item_hover']};
-    color: {p['nav_brand']};
-}}
-
-QListWidget#navList::item:selected {{
-    background-color: {p['nav_item_sel']};
-    color: {p['nav_text_sel']};
-    font-weight: 600;
-}}
-
+/* ==================== Scrollbars ==================== */
 QScrollBar:vertical {{
     background: transparent;
     width: 10px;
     margin: 2px;
 }}
 QScrollBar::handle:vertical {{
-    background: {p['border']};
+    background: {border};
     border-radius: 5px;
     min-height: 24px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {p['muted']}; }}
+QScrollBar::handle:vertical:hover {{ background: {text_secondary}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 
 QScrollBar:horizontal {{
@@ -424,98 +463,81 @@ QScrollBar:horizontal {{
     margin: 2px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {p['border']};
+    background: {border};
     border-radius: 5px;
     min-width: 24px;
 }}
-QScrollBar::handle:horizontal:hover {{ background: {p['muted']}; }}
+QScrollBar::handle:horizontal:hover {{ background: {text_secondary}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
+/* ==================== Tooltips ==================== */
 QToolTip {{
-    background-color: {p['surface']};
-    color: {p['text']};
-    border: 1px solid {p['border']};
-    border-radius: 6px;
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {border};
+    border-radius: {RADIUS['sm']}px;
     padding: 6px 8px;
+    font-size: {label_size}px;
 }}
 
-
+/* ==================== Date picker popup ==================== */
 QCalendarWidget QWidget {{
-    background-color: {p['surface']};
-    color: {p['text']};
-    alternate-background-color: {p['surface']};
+    background-color: {surface};
+    color: {text};
+    alternate-background-color: {surface};
 }}
-
 QCalendarWidget QAbstractItemView:enabled {{
-    background-color: {p['surface']};
-    color: {p['text']};
-    selection-background-color: {p['primary']};
-    selection-color: {p['text_on_accent']};
+    background-color: {surface};
+    color: {text};
+    selection-background-color: {primary};
+    selection-color: {text_on_primary};
     outline: none;
 }}
-
 QCalendarWidget QAbstractItemView:disabled {{
-    color: {p['text_disabled']};
+    color: {text_disabled};
 }}
-
 QCalendarWidget QMenu {{
-    background-color: {p['surface']};
-    color: {p['text']};
+    background-color: {surface};
+    color: {text};
 }}
-
-/* Top bar: month/year controls + nav arrows */
 QCalendarWidget QWidget#qt_calendar_navigationbar {{
-    background-color: {p['primary']};
-    color: {p['text_on_accent']};
+    background-color: {primary};
+    color: {text_on_primary};
 }}
-
 QCalendarWidget QToolButton {{
     background-color: transparent;
-    color: {p['text_on_accent']};
+    color: {text_on_primary};
     border: none;
     padding: 4px 10px;
     font-weight: 600;
 }}
-
 QCalendarWidget QToolButton:hover {{
-    background-color: {p['primary_hover']};
-    border-radius: 4px;
+    background-color: {primary_hover};
+    border-radius: {RADIUS['xs']}px;
 }}
-
 QCalendarWidget QToolButton:pressed {{
-    background-color: {p['primary_pressed']};
-    border-radius: 4px;
+    background-color: {primary_pressed};
+    border-radius: {RADIUS['xs']}px;
 }}
-
-QCalendarWidget QToolButton::menu-indicator {{
-    image: none;
-}}
-
-/* Month/Year dropdowns inside the calendar */
+QCalendarWidget QToolButton::menu-indicator {{ image: none; }}
 QCalendarWidget QComboBox {{
-    background-color: {p['surface']};
-    color: {p['text']};
-    border: 1px solid {p['border']};
-    border-radius: 4px;
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {border};
+    border-radius: {RADIUS['xs']}px;
     padding: 2px 6px;
 }}
-
-/* Weekday header row (Mon, Tue, Wed, ...) */
-QCalendarWidget QWidget {{
-    color: {p['text']};
-}}
-
-/* The horizontal header strip showing weekday names */
 QCalendarWidget QTableView QHeaderView::section {{
-    background-color: {p['surface_alt']};
-    color: {p['text_secondary']};
+    background-color: {surface_alt};
+    color: {text_secondary};
     padding: 4px;
     border: none;
 }}
 """
 
 
-APP_STYLESHEET = build_stylesheet(LIGHT)
+# Legacy constant still used by main.py
+APP_STYLESHEET = build_stylesheet("light")
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +546,7 @@ APP_STYLESHEET = build_stylesheet(LIGHT)
 
 _SETTINGS_ORG = "MembershipSystem"
 _SETTINGS_APP = "theme"
+_PALETTES = {"light": LIGHT, "dark": DARK}
 
 
 class ThemeManager(QObject):
@@ -533,7 +556,7 @@ class ThemeManager(QObject):
         super().__init__()
         s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
         saved = s.value("mode", "light")
-        self._mode = saved if saved in PALETTES else "light"
+        self._mode = saved if saved in _PALETTES else "light"
         self._listeners: list = []
 
     @property
@@ -544,7 +567,7 @@ class ThemeManager(QObject):
         return self._mode == "dark"
 
     def palette(self) -> dict:
-        return PALETTES[self._mode]
+        return _PALETTES[self._mode]
 
     def color(self, token: str) -> str:
         try:
@@ -563,7 +586,7 @@ class ThemeManager(QObject):
         pal.setColor(QPalette.ColorRole.Button, QColor(p["surface"]))
         pal.setColor(QPalette.ColorRole.ButtonText, QColor(p["text"]))
         pal.setColor(QPalette.ColorRole.Highlight, QColor(p["primary"]))
-        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor(p.get("text_on_primary", "#FFFFFF")))
         pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(p["surface"]))
         pal.setColor(QPalette.ColorRole.ToolTipText, QColor(p["text"]))
         pal.setColor(QPalette.ColorRole.PlaceholderText, QColor(p["text_secondary"]))
@@ -573,10 +596,8 @@ class ThemeManager(QObject):
                      QColor(p["text_disabled"]))
         return pal
 
-    # ----- mode switching -----
-
     def set_mode(self, mode: str, app: Optional[QApplication] = None):
-        if mode not in PALETTES or mode == self._mode:
+        if mode not in _PALETTES or mode == self._mode:
             return
         self._mode = mode
         QSettings(_SETTINGS_ORG, _SETTINGS_APP).setValue("mode", mode)
@@ -585,7 +606,6 @@ class ThemeManager(QObject):
         if app is not None:
             self.apply(app)
 
-        # Notify anyone listening (mostly for want-to-know widgets)
         self.theme_changed.emit(self._mode)
         for cb in list(self._listeners):
             try:
@@ -596,40 +616,37 @@ class ThemeManager(QObject):
     def toggle(self, app: Optional[QApplication] = None):
         self.set_mode("dark" if self._mode == "light" else "light", app=app)
 
-    # ----- the important part -----
-
     def apply(self, app: QApplication):
-        """
-        Apply the current mode to the whole app, then let Qt schedule
-        repaints naturally (update() only — no forced repaint(), no
-        processEvents(), no recursive repaint loops).
-
-        Forcing synchronous repaints is what produced the
-        'QPainter::begin: A paint device can only be painted by one
-        painter at a time' warnings — those happen when we call
-        widget.repaint() while Qt is already mid-paint.
-        """
-        app.setStyleSheet(build_stylesheet(self.palette()))
+        # 1. Set the app-level palette and stylesheet
         app.setPalette(self.build_palette())
+        app.setStyleSheet(build_stylesheet(self._mode))
 
-        tops = list(app.topLevelWidgets())
+        # 2. Walk EVERY widget in the tree and force it to:
+        #    a) take the new palette from the app
+        #    b) unpolish/polish against the new stylesheet
+        #    c) repaint
+        #
+        # app.allWidgets() returns every QWidget Qt knows about, including
+        # ones nested deep inside dialogs, stacked widgets, tab pages, etc.
+        for w in app.allWidgets():
+            try:
+                # Force the widget to use the app-level palette.
+                # Note: this clears any per-widget setPalette() call,
+                # which is exactly what we want on a theme flip.
+                w.setPalette(app.palette())
+                w.style().unpolish(w)
+                w.style().polish(w)
+                w.update()
+            except Exception:
+                pass
 
-        # Recursive unpolish/polish — this is safe (does not paint).
-        for top in tops:
-            self._deep_repolish(top)
-
-        # Call restyle() everywhere it exists.
+        # 3. Run the "call restyle() on anything that defines it" sweep
         sweep_restyle()
 
-        # Nudge the widgets that cache their sub-controls. Use update()
-        # only — never repaint().
-        for top in tops:
-            self._repaint_cached_controls(top)
-
-        # Schedule a repaint on each top-level window. update() is
-        # asynchronous and won't collide with an in-flight paint.
-        for top in tops:
+        # 4. Repaint top-level widgets (windows) so the changes take effect
+        for top in app.topLevelWidgets():
             top.update()
+            top.repaint()
 
     @staticmethod
     def _deep_repolish(widget):
@@ -651,11 +668,6 @@ class ThemeManager(QObject):
 
     @staticmethod
     def _repaint_cached_controls(top):
-        """
-        Nudge widgets whose rendered sub-controls Qt caches.
-        Only uses update() — never repaint() — so nothing collides with
-        an in-flight paint event.
-        """
         for gb in top.findChildren(QGroupBox):
             gb.update()
         for tw in top.findChildren(QTabWidget):
@@ -676,7 +688,6 @@ class ThemeManager(QObject):
                 hdr.viewport().update()
             except Exception:
                 pass
-        # Widgets with a graphics effect — still only update(), not repaint().
         for w in top.findChildren(object):
             if not hasattr(w, "graphicsEffect"):
                 continue
@@ -685,11 +696,8 @@ class ThemeManager(QObject):
                     w.update()
             except Exception:
                 pass
-    # ----- listener registration -----
 
     def on_change(self, callback: Callable[[str], None]):
-        """Register a callback fired after each mode switch. Held for the
-        lifetime of the process, so lambdas won't be GC'd mid-flight."""
         self._listeners.append(callback)
         return callback
 
@@ -705,26 +713,16 @@ def theme() -> ThemeManager:
 
 
 # ---------------------------------------------------------------------------
-# Sweep — call restyle() on any widget that has one
+# Sweep
 # ---------------------------------------------------------------------------
 
 def sweep_restyle():
-    """
-    Walk every widget in the app and call restyle() on any widget that
-    defines it — whether it subclasses ThemedWidget, registered with
-    register_themed(), or is just duck-typed.
-
-    This is the guaranteed fix for stuck widgets: it doesn't rely on
-    listeners being alive or widgets remembering to register.
-    """
     app = QApplication.instance()
     if app is None:
         return
     seen = set()
     for top in app.topLevelWidgets():
-        # top itself
         _maybe_restyle(top, seen)
-        # every descendant
         for w in top.findChildren(object):
             _maybe_restyle(w, seen)
 
@@ -742,39 +740,16 @@ def _maybe_restyle(widget, seen):
 
 
 # ---------------------------------------------------------------------------
-# ThemedWidget — the pattern every screen uses
+# ThemedWidget
 # ---------------------------------------------------------------------------
 
 class ThemedWidget:
-    """
-    Mixin for QWidget/QDialog subclasses whose styling depends on the
-    current mode. Override restyle(); it runs once at construction and
-    again on every theme flip.
-
-        class MyScreen(ThemedWidget, QWidget):
-            def __init__(self, ...):
-                QWidget.__init__(self, ...)
-                self._build_ui()
-                self._init_theme()    # call LAST, after widgets exist
-
-            def restyle(self):
-                t = theme()
-                self.title.setStyleSheet(f"color: {t.color('text')}; ...")
-    """
-
     def _init_theme(self):
-        # Push the current palette so native controls (QLineEdit frames,
-        # QComboBox arrows, scrollbars) are born with the correct mode.
         try:
             self.setPalette(theme().build_palette())
         except Exception:
             pass
 
-        # Modal dialogs are their own top-level windows and do NOT inherit
-        # the app QSS the way child widgets do. The `QDialog { background }`
-        # rule in build_stylesheet never reaches them — Windows paints the
-        # native frame and the dialog ends up dark in light mode. Apply a
-        # local background rule so the dialog window itself is themed.
         try:
             from PyQt6.QtWidgets import QDialog
             if isinstance(self, QDialog):
@@ -784,14 +759,9 @@ class ThemedWidget:
         except Exception:
             pass
 
-        # Paint once immediately
         self.restyle()
-
-        # Register for future flips
         theme().on_change(self._on_theme_change)
 
-        # Dialogs are top-level windows; force a repolish scoped to this
-        # widget's subtree so it starts in the right mode.
         try:
             ThemeManager._deep_repolish(self)
             top = self.window() if hasattr(self, "window") else self
@@ -815,22 +785,10 @@ class ThemedWidget:
             pass
 
     def restyle(self):
-        """Override. Must be idempotent."""
         pass
 
 
-# ---------------------------------------------------------------------------
-# register_themed — opt-in for duck-typed widgets
-# ---------------------------------------------------------------------------
-
 def register_themed(widget):
-    """
-    Opt-in registration for widgets that restyle themselves with
-    setStyleSheet() but don't subclass ThemedWidget.
-
-    The widget must expose a restyle() method. It runs once immediately,
-    and again on every theme flip (both via listener and via sweep).
-    """
     try:
         widget.restyle()
     except Exception:
@@ -846,7 +804,7 @@ def register_themed(widget):
 
 
 # ---------------------------------------------------------------------------
-# Small helpers
+# Button helpers
 # ---------------------------------------------------------------------------
 
 def polish_widget(widget):
@@ -855,33 +813,29 @@ def polish_widget(widget):
     widget.update()
 
 
-def make_danger(button: QPushButton):
+def make_danger(button):
     button.setProperty("cssClass", "danger")
     polish_widget(button)
 
 
-def make_secondary(button: QPushButton):
+def make_secondary(button):
     button.setProperty("cssClass", "secondary")
     polish_widget(button)
 
 
-def make_ghost(button: QPushButton):
+def make_ghost(button):
     button.setProperty("cssClass", "ghost")
     polish_widget(button)
 
 
+# ---------------------------------------------------------------------------
+# Toggle buttons
+# ---------------------------------------------------------------------------
+
 def theme_toggle_button() -> QPushButton:
-    """Light/dark toggle. Lives in the top-right header of the content area."""
     btn = QPushButton()
     btn.setObjectName("themeToggle")
     make_secondary(btn)
-    btn.setStyleSheet(
-        f"QPushButton {{"
-        f"  padding: 8px 14px;"
-        f"  border-radius: {BUTTON_RADIUS}px;"
-        f"  font-weight: 600;"
-        f"}}"
-    )
     _refresh_toggle_label(btn)
 
     def _on_click():
@@ -891,57 +845,51 @@ def theme_toggle_button() -> QPushButton:
     btn.clicked.connect(_on_click)
     theme().on_change(lambda _m: _refresh_toggle_label(btn))
     return btn
+
+
+def _refresh_toggle_label(btn):
+    try:
+        from ui.i18n import t
+        if theme().is_dark():
+            btn.setText("☀   " + t("theme.light_mode"))
+            btn.setToolTip(t("theme.switch_to_light"))
+        else:
+            btn.setText("☾   " + t("theme.dark_mode"))
+            btn.setToolTip(t("theme.switch_to_dark"))
+    except Exception:
+        btn.setText("☾   Dark Mode" if not theme().is_dark() else "☀   Light Mode")
+
+
 def language_toggle_button() -> QPushButton:
-    """Arabic/English toggle. Lives in the top-right header of the content area."""
     from ui import i18n
 
     btn = QPushButton()
     btn.setObjectName("languageToggle")
     make_secondary(btn)
-    btn.setStyleSheet(
-        f"QPushButton {{"
-        f"  padding: 8px 14px;"
-        f"  border-radius: {BUTTON_RADIUS}px;"
-        f"  font-weight: 600;"
-        f"}}"
-    )
 
     def _refresh_label():
         if i18n.current_language() == "ar":
             btn.setText("🌐   English")
-            btn.setToolTip(t("language.tooltip_en"))
+            btn.setToolTip("Switch to English")
         else:
             btn.setText("🌐   العربية")
-            btn.setToolTip(t("language.tooltip_ar"))
+            btn.setToolTip("Switch to Arabic")
 
-    from ui.i18n import t as _t
-    t = _t
     _refresh_label()
 
     def _on_click():
-        # Notify the app — the actual reload + rebuild is handled by the
-        # MainWindow listener (see main_window.py).
-        from ui.main_window import request_language_change  # noqa
+        from ui.main_window import request_language_change
         request_language_change()
 
     btn.clicked.connect(_on_click)
     return btn
-def _refresh_toggle_label(btn: QPushButton):
-    from ui.i18n import t
-    if theme().is_dark():
-        btn.setText("☀   " + t("theme.light_mode"))
-        btn.setToolTip(t("theme.switch_to_light"))
-    else:
-        btn.setText("☾   " + t("theme.dark_mode"))
-        btn.setToolTip(t("theme.switch_to_dark"))
 
 
 # ---------------------------------------------------------------------------
-# Fade helper (light page transition)
+# Fade helper (kept for compat)
 # ---------------------------------------------------------------------------
 
 def fade_in(widget: QWidget, duration_ms: int = 180):
-    """Short opacity fade-in for a widget that just became visible."""
     effect = QGraphicsOpacityEffect(widget)
     widget.setGraphicsEffect(effect)
     anim = QPropertyAnimation(effect, b"opacity", widget)
@@ -949,16 +897,11 @@ def fade_in(widget: QWidget, duration_ms: int = 180):
     anim.setStartValue(0.0)
     anim.setEndValue(1.0)
     anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-    widget._fade_anim = anim  # keep ref so it isn't GC'd mid-flight
+    widget._fade_anim = anim
     anim.start()
-    
+
+
 def force_repaint(widget):
-    """
-    Repolish a widget and its subtree, and schedule a repaint.
-    Uses update() only — never repaint() — so we never collide with an
-    in-flight paint event (which is what produced the 'Painter not
-    active' warnings).
-    """
     try:
         widget.style().unpolish(widget)
         widget.style().polish(widget)

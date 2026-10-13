@@ -1,5 +1,20 @@
 """
-Player list screen — Arabic.
+Player list screen — v4 design.
+
+Layout:
+    ┌──────────────────────────────────────────────────────────┐
+    │  [search …] [Group ▾] [Plan ▾] [Status ▾]     [+ Add]    │  ← Toolbar
+    │                                                          │
+    │  ┌─ Players (table) ─────────────────────────────────────┐│
+    │  │  ID   Name   Group   Plan   Sessions   Status          ││
+    │  │  ...                                                   ││
+    │  └───────────────────────────────────────────────────────┘│
+    │                                                          │
+    │  (empty state shown instead of the table when no rows)    │
+    └──────────────────────────────────────────────────────────┘
+
+The screen no longer carries its own page title; the workspace header
+shows it (see ui/main_window.py + ui/shell.py).
 """
 
 import os
@@ -7,7 +22,8 @@ import sys
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-    QTableWidget, QTableWidgetItem, QHeaderView, QStackedWidget, QComboBox, QLabel,
+    QTableWidget, QTableWidgetItem, QHeaderView, QStackedWidget,
+    QComboBox, QLabel,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -19,11 +35,12 @@ from services import subscription_service
 from ui.dialogs.player_form_dialog import PlayerFormDialog
 from ui.screens.player_detail_screen import PlayerDetailScreen
 from ui.dialogs.qr_preview_dialog import QRPreviewDialog
-from ui.theme import theme, ThemedWidget, GUTTER
+from ui.components import Toolbar, EmptyState, Pill
+from ui.theme import theme, ThemedWidget
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
-# Map DB status keys → translation keys
 _STATUS_KEY = {
     "active":    "players.status.active",
     "expired":   "players.status.expired",
@@ -40,37 +57,27 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self._init_theme()
 
     def _build_ui(self):
+        # The stack lets us swap between the list page and the detail page
+        # without leaving this widget.
         self.stack = QStackedWidget()
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(GUTTER, GUTTER, GUTTER, GUTTER)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self.stack)
 
+        # ----- List page -----
         list_page = QWidget()
-        layout = QVBoxLayout(list_page)
-        layout.setSpacing(14)
+        page_layout = QVBoxLayout(list_page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(SPACING["lg"])
 
-        title_row = QHBoxLayout()
-        title_col = QVBoxLayout()
-        title_col.setSpacing(2)
-        self.title = QLabel(t("players.title"))
-        self.subtitle = QLabel(t("players.subtitle"))
-        title_col.addWidget(self.title)
-        title_col.addWidget(self.subtitle)
-        title_row.addLayout(title_col)
-        title_row.addStretch()
-
-        add_button = QPushButton(t("players.add_player"))
-        add_button.clicked.connect(self._on_add_player)
-        title_row.addWidget(add_button)
-        layout.addLayout(title_row)
-
-        filters_row = QHBoxLayout()
-        filters_row.setSpacing(8)
+        # ---- Toolbar: search + filters + add button ----
+        self.toolbar = Toolbar()
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(t("players.search.placeholder"))
+        self.search_input.setProperty("cssClass", "search")
+        self.search_input.setMinimumWidth(240)
         self.search_input.textChanged.connect(self.refresh)
-        self.search_input.setMinimumWidth(220)
 
         config = load_config()
 
@@ -92,11 +99,22 @@ class PlayerListScreen(ThemedWidget, QWidget):
             self.status_filter.addItem(t(_STATUS_KEY[key]), key)
         self.status_filter.currentIndexChanged.connect(self.refresh)
 
-        filters_row.addWidget(self.search_input, stretch=1)
-        filters_row.addWidget(self.group_filter)
-        filters_row.addWidget(self.plan_filter)
-        filters_row.addWidget(self.status_filter)
-        layout.addLayout(filters_row)
+        self.add_button = QPushButton(t("players.add_player"))
+        self.add_button.clicked.connect(self._on_add_player)
+
+        self.toolbar.add_leading(self.search_input, stretch=1)
+        self.toolbar.add_leading(self.group_filter)
+        self.toolbar.add_leading(self.plan_filter)
+        self.toolbar.add_leading(self.status_filter)
+        self.toolbar.add_trailing(self.add_button)
+
+        page_layout.addWidget(self.toolbar)
+
+        # ---- Table (or empty state, swapped by visibility) ----
+        self.table_container = QWidget()
+        table_layout = QVBoxLayout(self.table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(0)
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels([
@@ -115,7 +133,19 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self.table.setShowGrid(False)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.table.cellDoubleClicked.connect(self._on_row_double_clicked)
-        layout.addWidget(self.table, stretch=1)
+        table_layout.addWidget(self.table)
+
+        # Empty state — hidden by default, shown when there are no rows
+        self.empty_state = EmptyState(
+            icon="👥",
+            message=t("players.empty"),
+            action_text=t("players.add_player"),
+            on_action=self._on_add_player,
+        )
+        self.empty_state.hide()
+        table_layout.addWidget(self.empty_state, stretch=1)
+
+        page_layout.addWidget(self.table_container, stretch=1)
 
         self.stack.addWidget(list_page)
         self.stack.setCurrentIndex(0)
@@ -123,31 +153,22 @@ class PlayerListScreen(ThemedWidget, QWidget):
     # ---------- theme ----------
 
     def restyle(self):
-        t_ = theme()
-        self.title.setStyleSheet(
-            f"QLabel {{ color: {t_.color('text')}; background-color: transparent;"
-            f" font-size: 22px; font-weight: 700; }}"
-        )
-        self.subtitle.setStyleSheet(
-            f"QLabel {{ color: {t_.color('text_secondary')}; background-color: transparent;"
-            f" font-size: 13px; }}"
-        )
         if hasattr(self, "_status_items"):
             self._repaint_status_items()
 
     def _repaint_status_items(self):
-        t_ = theme()
+        tm = theme()
         token_colors = {
-            "active":    t_.color("success"),
-            "expired":   t_.color("danger"),
-            "suspended": t_.color("warning"),
-            "none":      t_.color("muted"),
+            "active":    tm.color("success"),
+            "expired":   tm.color("danger"),
+            "suspended": tm.color("warning"),
+            "none":      tm.color("text_secondary"),
         }
         soft_bg = {
-            "active":    t_.color("success_soft"),
-            "expired":   t_.color("danger_soft"),
-            "suspended": t_.color("warning_soft"),
-            "none":      t_.color("surface_alt"),
+            "active":    tm.color("success_soft"),
+            "expired":   tm.color("danger_soft"),
+            "suspended": tm.color("warning_soft"),
+            "none":      tm.color("neutral_soft"),
         }
         for item, kind in self._status_items:
             item.setForeground(QColor(token_colors[kind]))
@@ -177,14 +198,25 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self._render_rows(rows)
 
     def _render_rows(self, rows):
+        # Toggle between the table and the empty state.
+        if not rows:
+            self.table.hide()
+            self.empty_state.show()
+            self._current_rows = []
+            self._status_items = []
+            return
+
+        self.table.show()
+        self.empty_state.hide()
+
         self.table.setRowCount(len(rows))
         self._current_rows = [player for player, _ in rows]
         self._status_items = []
 
+        tm = theme()
         for i, (player, display) in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(str(player.player_id)))
             self.table.setItem(i, 1, QTableWidgetItem(player.full_name))
-
             self.table.setItem(i, 2, QTableWidgetItem(get_group_label(player.player_group)))
 
             if display["plan_type"]:

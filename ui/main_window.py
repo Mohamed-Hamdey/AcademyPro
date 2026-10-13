@@ -1,60 +1,44 @@
 """
-Main application window — bilingual shell.
+Main application window — v4 shell with role-gated navigation.
 
-Sidebar (always dark) has brand + nav only. A header strip at the top of
-the content area holds the language and theme toggles.
+Sidebar items are permission-gated via app_state.app.can(...). A user
+menu in the top bar shows the current user and offers Logout.
 
-Language change triggers a full window rebuild so every t("...") string
-gets re-resolved and RTL/LTR flips correctly.
+Logout tears down the window and returns to the login dialog. The user
+stays logged out until they authenticate again.
 """
 
 import os
 import sys
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QStackedWidget, QFrame, QApplication,
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QDialog,
 )
-from PyQt6.QtCore import Qt, QSize, QSettings
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config.config_loader import get_academy_name, get_academy_logo, load_config
 from ui.screens.scan_screen import ScanScreen
 from ui.screens.player_list_screen import PlayerListScreen
-from ui.theme import theme, theme_toggle_button, language_toggle_button
-from ui import i18n
+from ui.screens.users_screen import UsersScreen
+from ui.shell import TopBar, Sidebar, Workspace
+from ui.theme import theme
 from ui.i18n import t
-
-EXPANDED_WIDTH  = 220
-COLLAPSED_WIDTH = 54
-LOGO_SIZE       = 40
-
-NAV_ICONS = {
-    "nav.check_in":       "▶",
-    "nav.manage_players": "▤",
-}
-
-_SETTINGS_ORG = "MembershipSystem"
-_SETTINGS_APP = "app"
+from app_state import app as app_state
 
 
-# ---------------------------------------------------------------------------
-# Module-level language-change hook.
-#
-# The language button lives deep inside the widget tree, but switching
-# language means rebuilding the top-level window — so we need a way to
-# call back up to the app. We keep a module-level reference to the current
-# MainWindow (set in MainWindow.__init__) and a public function the button
-# calls.
-# ---------------------------------------------------------------------------
+# Nav registration: (key, label_key, title_key, icon, required_permission)
+# Required_permission=None means "always shown".
+NAV_ITEMS = [
+    ("nav.check_in",       "nav.check_in",       "checkin.title",  "▶",  "checkin"),
+    ("nav.manage_players", "nav.manage_players", "players.title",  "▤",  "players.view"),
+    ("nav.users",          "nav.users",          "users.title",    "👥", "users.manage"),
+]
+
 
 _current_window: "MainWindow" = None
 
 
 def request_language_change():
-    """Called by the language toggle button. Flips the language, rebuilds
-    the main window, and re-flips layout direction."""
     if _current_window is None:
         return
     _current_window._switch_language()
@@ -67,268 +51,127 @@ class MainWindow(QMainWindow):
         _current_window = self
 
         self.setWindowTitle(t("app.window_title"))
-        self.resize(1040, 700)
-        self._collapsed = False
+        self.resize(1100, 720)
+        self.setMinimumSize(900, 600)
 
+        # Map of nav_key -> page widget, only for pages the user can see.
+        self._pages_by_nav_key = {}
+        # Map of workspace stack index -> nav_key, for sidebar→workspace dispatch.
+        self._nav_keys_in_order = []
+
+        self._build_ui()
+
+    def _build_ui(self):
         central = QWidget()
-        layout = QHBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        # ---------------- Sidebar ----------------
-        self.sidebar = QWidget()
-        self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(EXPANDED_WIDTH)
-        side_layout = QVBoxLayout(self.sidebar)
-        side_layout.setContentsMargins(0, 0, 0, 0)
-        side_layout.setSpacing(0)
+        # ---- Top bar (with logout callback) ----
+        self.topbar = TopBar(on_logout=self._on_logout)
+        outer.addWidget(self.topbar)
 
-        # Logo row
-        self.logo_row = QWidget()
-        self.logo_row.setObjectName("logoRow")
-        self.logo_row.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.logo_row.setToolTip(t("sidebar.collapse"))
-        self.logo_row.mousePressEvent = self._on_logo_clicked
-        logo_layout = QHBoxLayout(self.logo_row)
-        logo_layout.setContentsMargins(12, 16, 12, 16)
-        logo_layout.setSpacing(10)
+        # ---- Body: sidebar + workspace ----
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
 
-        self.logo_label = QLabel()
-        self.logo_label.setFixedSize(LOGO_SIZE, LOGO_SIZE)
-        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._load_logo()
-        logo_layout.addWidget(self.logo_label)
+        self.sidebar = Sidebar()
+        self.workspace = Workspace()
 
-        brand_col = QVBoxLayout()
-        brand_col.setContentsMargins(0, 0, 0, 0)
-        brand_col.setSpacing(2)
+        # Register pages (only those the user has permission for)
+        self._register_page("nav.check_in", "checkin.title", ScanScreen(), "checkin")
+        self._register_page("nav.manage_players", "players.title", PlayerListScreen(), "players.view")
+        self._register_page("nav.users", "users.title", UsersScreen(), "users.manage")
 
-        cfg = load_config()
-        # In Arabic we show Arabic first then English; in English, the
-        # reverse. The "primary" name follows the active language.
-        name_ar = cfg.get("academy_name_ar", "")
-        name_en = cfg.get("academy_name", "")
-        if i18n.current_language() == "ar":
-            primary, secondary = name_ar, name_en
-        else:
-            primary, secondary = name_en, name_ar
+        # One signal drives everything.
+        self.sidebar.on_change(self._on_nav_changed)
 
-        self.brand_primary = QLabel(primary)
-        self.brand_primary.setWordWrap(True)
-        self.brand_secondary = QLabel(secondary)
-        self.brand_secondary.setWordWrap(True)
-        brand_col.addWidget(self.brand_primary)
-        brand_col.addWidget(self.brand_secondary)
+        body_layout.addWidget(self.sidebar)
+        body_layout.addWidget(self.workspace, stretch=1)
+        outer.addWidget(body, stretch=1)
 
-        logo_layout.addLayout(brand_col, stretch=1)
-        side_layout.addWidget(self.logo_row)
-
-        self.hairline = QFrame()
-        self.hairline.setFrameShape(QFrame.Shape.HLine)
-        self.hairline.setFixedHeight(1)
-        side_layout.addWidget(self.hairline)
-
-        # Nav
-        self.nav_list = QListWidget()
-        self.nav_list.setObjectName("navList")
-        side_layout.addWidget(self.nav_list, stretch=1)
-
-        # ---------------- Right side: header + pages ----------------
-        right_side = QWidget()
-        right_layout = QVBoxLayout(right_side)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-
-        # ---- Header strip ----
-        self.header = QWidget()
-        self.header.setObjectName("header")
-        header_layout = QHBoxLayout(self.header)
-        header_layout.setContentsMargins(16, 12, 16, 12)
-        header_layout.setSpacing(8)
-
-        # header content will be pushed to the "far end" which flips
-        # automatically with RTL
-        header_layout.addStretch()
-
-        self.language_button = language_toggle_button()
-        self.theme_button = theme_toggle_button()
-        header_layout.addWidget(self.language_button)
-        header_layout.addWidget(self.theme_button)
-
-        right_layout.addWidget(self.header)
-
-        # ---- Pages ----
-        self.pages = QStackedWidget()
-        self.pages.setContentsMargins(0, 0, 0, 0)
-
-        self.scan_screen = ScanScreen()
-        self.player_list_screen = PlayerListScreen()
-        self._add_nav_item("nav.check_in", self.scan_screen)
-        self._add_nav_item("nav.manage_players", self.player_list_screen)
-
-        self.nav_list.currentRowChanged.connect(self._on_nav_changed)
-        self.nav_list.setCurrentRow(0)
-
-        right_layout.addWidget(self.pages, stretch=1)
-
-        layout.addWidget(self.sidebar)
-        layout.addWidget(right_side, stretch=1)
         self.setCentralWidget(central)
 
-        # Initial paint
-        self._restyle_sidebar()
-        self._restyle_header()
-        self._restyle_content()
-        self._apply_collapse_state()
+        # Select the first visible nav item
+        if self._nav_keys_in_order:
+            self.sidebar.set_current_row(0)
 
-        theme().on_change(lambda _m: self._on_theme_changed())
+        theme().on_change(lambda _m: self._restyle())
 
-    # ---------- nav ----------
+    def _register_page(self, nav_key: str, title_key: str, page: QWidget,
+                       permission: str):
+        """
+        Add a page to the workspace and (if permitted) a nav item to the
+        sidebar. Keeps both lists in lockstep, so sidebar index == workspace
+        index always holds among *visible* items.
+        """
+        # Add the page to the workspace regardless — the sidebar controls
+        # visibility. But if the user can't access it, we don't want the
+        # sidebar to show it, so we only add the sidebar item conditionally.
+        glyph = self._glyph_for(nav_key)
+        sidebar_index = self.sidebar.add_item(nav_key, glyph, required_permission=permission)
 
-    def _add_nav_item(self, label_key, page):
-        item = QListWidgetItem()
-        item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        item.setData(Qt.ItemDataRole.UserRole, label_key)
-        self.nav_list.addItem(item)
-        self.pages.addWidget(page)
-        self._render_nav_item(item, label_key, collapsed=False)
+        if sidebar_index < 0:
+            # Permission denied — don't register the page at all
+            return
 
-    def _render_nav_item(self, item, label_key, collapsed):
-        glyph = NAV_ICONS.get(label_key, "•")
-        label = t(label_key)
-        if collapsed:
-            item.setText(glyph)
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setToolTip(label)
-            item.setSizeHint(QSize(0, 40))
-        else:
-            item.setText(f"  {glyph}   {label}")
-            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            item.setToolTip("")
-            item.setSizeHint(QSize(0, 42))
+        self.workspace.add_page(nav_key, t(title_key), page)
+        self._pages_by_nav_key[nav_key] = page
+        self._nav_keys_in_order.append(nav_key)
 
-    def _on_nav_changed(self, index):
-        self.pages.setCurrentIndex(index)
+    @staticmethod
+    def _glyph_for(nav_key: str) -> str:
+        return {
+            "nav.check_in":       "▶",
+            "nav.manage_players": "▤",
+            "nav.users":          "👥",
+        }.get(nav_key, "•")
 
-    # ---------- collapse / expand ----------
+    def _on_nav_changed(self, index: int):
+        """Sidebar index → workspace page key."""
+        if index < 0 or index >= len(self._nav_keys_in_order):
+            return
+        nav_key = self._nav_keys_in_order[index]
+        self.workspace.show_page_by_key(nav_key)
 
-    def _on_logo_clicked(self, event):
-        self._collapsed = not self._collapsed
-        self._apply_collapse_state()
+    def _restyle(self):
+        pass
 
-    def _apply_collapse_state(self):
-        if self._collapsed:
-            self.sidebar.setFixedWidth(COLLAPSED_WIDTH)
-            self.brand_primary.setVisible(False)
-            self.brand_secondary.setVisible(False)
-            self.logo_row.setToolTip(t("sidebar.expand"))
-            self.logo_row.layout().setContentsMargins(8, 16, 8, 16)
-            self.logo_row.layout().setAlignment(
-                self.logo_label, Qt.AlignmentFlag.AlignCenter
-            )
-        else:
-            self.sidebar.setFixedWidth(EXPANDED_WIDTH)
-            self.brand_primary.setVisible(True)
-            self.brand_secondary.setVisible(True)
-            self.logo_row.setToolTip(t("sidebar.collapse"))
-            self.logo_row.layout().setContentsMargins(12, 16, 12, 16)
-            self.logo_row.layout().setAlignment(
-                self.logo_label, Qt.AlignmentFlag.AlignLeft
-            )
+    # ---------- logout ----------
 
-        self.nav_list.setProperty("collapsed", "true" if self._collapsed else "false")
-        self.nav_list.style().unpolish(self.nav_list)
-        self.nav_list.style().polish(self.nav_list)
+    def _on_logout(self):
+        """Clear the session and return to the login dialog."""
+        from PyQt6.QtWidgets import QApplication
 
-        for i in range(self.nav_list.count()):
-            item = self.nav_list.item(i)
-            label_key = item.data(Qt.ItemDataRole.UserRole)
-            self._render_nav_item(item, label_key, collapsed=self._collapsed)
+        app_state.clear()
+        self.close()
 
-        self._restyle_sidebar()
+        # Show login again
+        from ui.screens.login_screen import LoginDialog
+        login = LoginDialog()
+        if login.exec() != QDialog.DialogCode.Accepted:
+            QApplication.instance().quit()
+            return
 
-    # ---------- theming ----------
-
-    def _on_theme_changed(self):
-        self._restyle_sidebar()
-        self._restyle_header()
-        self._restyle_content()
-
-    def _restyle_sidebar(self):
-        t_ = theme()
-        self.sidebar.setStyleSheet(
-            f"QWidget#sidebar {{ background-color: {t_.color('nav_bg')}; }}"
-        )
-        self.logo_row.setStyleSheet(
-            f"QWidget#logoRow {{ background-color: transparent; }}"
-        )
-        self.logo_label.setStyleSheet(
-            f"QLabel {{"
-            f"  background-color: #2A3042;"
-            f"  color: #FFFFFF;"
-            f"  font-size: 15px; font-weight: 800;"
-            f"  border-radius: 10px;"
-            f"}}"
-        )
-        self.brand_primary.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {t_.color('nav_brand')};"
-            f"  background-color: transparent;"
-            f"  font-size: 13px; font-weight: 700;"
-            f"}}"
-        )
-        self.brand_secondary.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {t_.color('nav_item')};"
-            f"  background-color: transparent;"
-            f"  font-size: 10px; font-weight: 500;"
-            f"}}"
-        )
-        self.hairline.setStyleSheet(
-            f"background-color: {t_.color('nav_hairline')}; border: none;"
-        )
-
-    def _restyle_header(self):
-        t_ = theme()
-        self.header.setStyleSheet(
-            f"QWidget#header {{"
-            f"  background-color: {t_.color('bg')};"
-            f"  border-bottom: 1px solid {t_.color('border')};"
-            f"}}"
-        )
-
-    def _restyle_content(self):
-        bg = theme().color("bg")
-        self.pages.setStyleSheet(f"QStackedWidget {{ background-color: {bg}; }}")
-        for i in range(self.pages.count()):
-            page = self.pages.widget(i)
-            if page is None:
-                continue
-            page.update()
-
-    # ---------- logo ----------
-
-    def _load_logo(self):
-        path = get_academy_logo()
-        if path:
-            pix = QPixmap(path).scaled(
-                LOGO_SIZE, LOGO_SIZE,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self.logo_label.setPixmap(pix)
-        else:
-            initials = "".join(w[0] for w in get_academy_name().split()[:3]).upper()
-            self.logo_label.setText(initials or "A")
+        # Logged in as someone else — open a fresh window
+        global _current_window
+        new_window = MainWindow()
+        _current_window = new_window
+        new_window.show()
 
     # ---------- language switch ----------
 
     def _switch_language(self):
-        """Flip language, persist it, rebuild the UI from scratch."""
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtCore import QSettings
+        from ui import i18n
+
         current = i18n.current_language()
         new_lang = "en" if current == "ar" else "ar"
         i18n.load(new_lang)
-        QSettings(_SETTINGS_ORG, _SETTINGS_APP).setValue("language", new_lang)
+        QSettings("MembershipSystem", "app").setValue("language", new_lang)
 
         app = QApplication.instance()
         if app is not None:
@@ -337,8 +180,6 @@ class MainWindow(QMainWindow):
             else:
                 app.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
 
-        # Tear down the current window and rebuild from scratch so every
-        # t("...") call re-resolves against the new language.
         self.close()
         global _current_window
         new_window = MainWindow()
@@ -348,11 +189,10 @@ class MainWindow(QMainWindow):
     # ---------- lifecycle ----------
 
     def closeEvent(self, event):
-        # Only stop the camera on real user-initiated close, not on the
-        # programmatic close from _switch_language (which would kill the
-        # camera between the two windows).
         try:
-            self.scan_screen.stop_camera()
+            scan = self._pages_by_nav_key.get("nav.check_in")
+            if scan is not None and hasattr(scan, "stop_camera"):
+                scan.stop_camera()
         except Exception:
             pass
         super().closeEvent(event)

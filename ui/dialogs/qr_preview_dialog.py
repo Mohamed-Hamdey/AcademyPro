@@ -1,16 +1,21 @@
-"""QR preview dialog — Arabic."""
+"""QR preview dialog — v4 design."""
 
+import os
+import sys
 import shutil
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFileDialog,
- QFrame,
+    QFrame,
 )
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from ui.message_box import info
-from ui.theme import theme, ThemedWidget, make_secondary, CARD_RADIUS
-from ui.widgets import StatusPill
+from ui.components import Pill
+from ui.theme import theme, ThemedWidget, make_secondary
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
@@ -26,9 +31,10 @@ class QRPreviewDialog(ThemedWidget, QDialog):
 
     def _build_ui(self, player_id):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
+        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setSpacing(SPACING["md"])
 
+        # Header: name + ID + created pill
         self.title = QLabel(self.player_name)
         self.title.setWordWrap(True)
         layout.addWidget(self.title)
@@ -37,14 +43,15 @@ class QRPreviewDialog(ThemedWidget, QDialog):
         self.id_label = QLabel(t("dlg.qr.player_id", player_id=player_id))
         header_row.addWidget(self.id_label)
         header_row.addStretch()
-        self.success_pill = StatusPill(t("dlg.qr.created_badge"), "success")
+        self.success_pill = Pill(t("dlg.qr.created_badge"), "success")
         header_row.addWidget(self.success_pill)
         layout.addLayout(header_row)
 
+        # QR code in a soft frame
         qr_frame = QFrame()
         qr_frame.setObjectName("qrFrame")
         qr_layout = QVBoxLayout(qr_frame)
-        qr_layout.setContentsMargins(16, 16, 16, 16)
+        qr_layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
         self.qr_label = QLabel()
         self.qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pixmap = QPixmap(self.qr_path).scaled(
@@ -61,6 +68,7 @@ class QRPreviewDialog(ThemedWidget, QDialog):
         layout.addWidget(self.hint)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(SPACING["sm"])
         self.save_as_button = QPushButton(t("dlg.qr.save_as"))
         self.close_button = QPushButton(t("dlg.qr.done"))
         make_secondary(self.save_as_button)
@@ -72,22 +80,36 @@ class QRPreviewDialog(ThemedWidget, QDialog):
         layout.addLayout(button_row)
 
     def restyle(self):
-        t_ = theme()
+        tm = theme()
         self.title.setStyleSheet(
-            f"color: {t_.color('text')}; font-size: 18px; font-weight: 700;"
+            f"QLabel {{"
+            f"  color: {tm.color('text')};"
+            f"  background-color: transparent;"
+            f"  font-size: 18px;"
+            f"  font-weight: 700;"
+            f"}}"
         )
         self.id_label.setStyleSheet(
-            f"color: {t_.color('text_secondary')}; font-size: 12px;"
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-size: 12px;"
+            f"}}"
         )
         self.qr_frame.setStyleSheet(
             f"QFrame#qrFrame {{"
-            f"  background-color: {t_.color('surface_alt')};"
-            f"  border: 1px solid {t_.color('border')};"
-            f"  border-radius: {CARD_RADIUS}px;"
+            f"  background-color: {tm.color('surface_alt')};"
+            f"  border: 1px solid {tm.color('border')};"
+            f"  border-radius: {RADIUS['lg']}px;"
             f"}}"
         )
         self.hint.setStyleSheet(
-            f"color: {t_.color('text_secondary')}; font-style: italic; font-size: 12px;"
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-style: italic;"
+            f"  font-size: 12px;"
+            f"}}"
         )
 
     def _on_save_as(self):

@@ -72,19 +72,44 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # Development / testing
         "tkinter",
-        "matplotlib",
-        "numpy.testing",
         "pytest",
-        # PyQt5 is installed in Anaconda but our app uses PyQt6.
-        # Excluding it prevents PyInstaller from trying to bundle both
-        # Qt bindings, which is what causes the "multiple Qt bindings"
-        # build error.
+        "_pytest",
+        "numpy.testing",
+
+        # GUI libraries we don't use
+        "matplotlib",
+        "IPython",
+        "jupyter",
+        "notebook",
         "PyQt5",
         "PyQt5.QtCore",
         "PyQt5.QtGui",
         "PyQt5.QtWidgets",
+        "PyQt5.QtSvg",
         "PyQt5.sip",
+
+        # Scientific / ML libraries Anaconda ships that we don't use
+        "tensorflow",
+        "torch",
+        "torchvision",
+        "keras",
+        "sklearn",
+        "scipy",
+        "pandas",
+        "numba",
+        "sympy",
+        "astropy",
+        "erfa",
+        "h5py",
+        "sqlalchemy",
+        "bokeh",
+        "dask",
+        "distributed",
+        "xarray",
+        "statsmodels",
+        "seaborn",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

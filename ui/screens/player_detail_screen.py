@@ -1,5 +1,26 @@
 """
-Player detail / admin screen — Arabic.
+Player detail / admin screen — v4 design.
+
+Layout:
+    ┌────────────────────────────────────────────────────────────┐
+    │  [← Back to Players]                                       │
+    │                                                            │
+    │  ┌─ Overview ─┬─ Attendance ─┬─ Progress ─┐  ← Tabs        │
+    │  │                                          │              │
+    │  │  ┌─ Player card ──┐  ┌─ Actions ──────┐  │              │
+    │  │  │  photo | info  │  │ Edit, QR, …    │  │              │
+    │  │  └────────────────┘  └────────────────┘  │              │
+    │  │                                          │              │
+    │  │  ┌─ Subscription ────────────────────┐   │              │
+    │  │  │  Status · plan · sessions · expiry│   │              │
+    │  │  │  [Activate][Suspend][Adjust][Pay] │   │              │
+    │  │  └───────────────────────────────────┘   │              │
+    │  │                                          │              │
+    │  │  ┌─ Notes ───────────────────────────┐   │              │
+    │  │  │  textarea           [Save Notes]  │   │              │
+    │  │  └───────────────────────────────────┘   │              │
+    │  └──────────────────────────────────────────┘              │
+    └────────────────────────────────────────────────────────────┘
 """
 
 import os
@@ -9,8 +30,7 @@ from datetime import date
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
-    QTableWidgetItem, QHeaderView, QTextEdit, QGroupBox, QTabWidget,
-    QFileDialog,
+    QTableWidgetItem, QHeaderView, QTextEdit, QTabWidget, QFileDialog,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -27,7 +47,9 @@ from ui.dialogs.adjust_sessions_dialog import AdjustSessionsDialog
 from ui.dialogs.update_payment_dialog import UpdatePaymentDialog
 from logic.qr_utils import generate_qr_for_player
 from ui.screens.progress_view import ProgressPanel
-from ui.theme import theme, ThemedWidget, make_danger, make_secondary, GUTTER
+from ui.components import SectionCard, Toolbar, Pill
+from ui.theme import theme, ThemedWidget, make_danger, make_secondary
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
 from ui.message_box import info, warn, ask
 
@@ -43,31 +65,35 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(GUTTER, GUTTER, GUTTER, GUTTER)
-        root.setSpacing(12)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(SPACING["lg"])
 
-        top_row = QHBoxLayout()
+        # ---- Toolbar: back button ----
+        self.toolbar = Toolbar()
         back_button = QPushButton(t("detail.back"))
         make_secondary(back_button)
         back_button.clicked.connect(self._on_back_clicked)
-        top_row.addWidget(back_button)
-        top_row.addStretch()
-        root.addLayout(top_row)
+        self.toolbar.add_leading(back_button)
+        root.addWidget(self.toolbar)
 
+        # ---- Tabs ----
         tabs = QTabWidget()
         root.addWidget(tabs, stretch=1)
 
-        # ===== Overview =====
+        # ===================== Overview tab =====================
         overview = QWidget()
         ov = QVBoxLayout(overview)
-        ov.setSpacing(14)
+        ov.setContentsMargins(0, SPACING["lg"], 0, 0)
+        ov.setSpacing(SPACING["lg"])
 
+        # ---- Player card + action buttons ----
         card_row = QHBoxLayout()
+        card_row.setSpacing(SPACING["lg"])
         self.player_card = PlayerCardWidget()
         card_row.addWidget(self.player_card, stretch=1)
 
         card_buttons = QVBoxLayout()
-        card_buttons.setSpacing(6)
+        card_buttons.setSpacing(SPACING["sm"])
         edit_button = QPushButton(t("detail.player.edit"))
         make_secondary(edit_button)
         reissue_qr_button = QPushButton(t("detail.player.reissue_qr"))
@@ -84,14 +110,14 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         card_row.addLayout(card_buttons)
         ov.addLayout(card_row)
 
-        sub_box = QGroupBox(t("detail.sub.group"))
-        sub_layout = QVBoxLayout(sub_box)
+        # ---- Subscription card ----
+        self.sub_card = SectionCard(title=t("detail.sub.group"))
         self.sub_status_label = QLabel()
         self.sub_status_label.setWordWrap(True)
-        sub_layout.addWidget(self.sub_status_label)
+        self.sub_card.body.addWidget(self.sub_status_label)
 
         sub_buttons = QHBoxLayout()
-        sub_buttons.setSpacing(6)
+        sub_buttons.setSpacing(SPACING["sm"])
         self.activate_button = QPushButton(t("detail.sub.activate"))
         self.suspend_button = QPushButton(t("detail.sub.suspend"))
         make_danger(self.suspend_button)
@@ -107,32 +133,37 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
                   self.adjust_button, self.record_payment_button):
             sub_buttons.addWidget(b)
         sub_buttons.addStretch()
-        sub_layout.addLayout(sub_buttons)
-        ov.addWidget(sub_box)
+        self.sub_card.body.addLayout(sub_buttons)
+        ov.addWidget(self.sub_card)
 
-        notes_box = QGroupBox(t("detail.notes.group"))
-        notes_layout = QVBoxLayout(notes_box)
+        # ---- Notes card ----
+        self.notes_card = SectionCard(title=t("detail.notes.group"))
         self.notes_input = QTextEdit()
-        self.notes_input.setMaximumHeight(80)
+        self.notes_input.setMaximumHeight(90)
         save_notes_button = QPushButton(t("detail.notes.save"))
+        make_secondary(save_notes_button)
         save_notes_button.clicked.connect(self._on_save_notes)
-        notes_layout.addWidget(self.notes_input)
-        notes_layout.addWidget(
-            save_notes_button,
-            alignment=Qt.AlignmentFlag.AlignRight,
-        )
-        ov.addWidget(notes_box)
+
+        self.notes_card.body.addWidget(self.notes_input)
+
+        # Save button on the trailing edge (Qt handles RTL mirroring)
+        notes_footer = QHBoxLayout()
+        notes_footer.addStretch()
+        notes_footer.addWidget(save_notes_button)
+        self.notes_card.body.addLayout(notes_footer)
+
+        ov.addWidget(self.notes_card)
         ov.addStretch()
 
         tabs.addTab(overview, t("detail.tab.overview"))
 
-        # ===== Attendance =====
+        # ===================== Attendance tab =====================
         attendance = QWidget()
         att = QVBoxLayout(attendance)
-        att.setSpacing(12)
-        att_box = QGroupBox(t("detail.att.group"))
-        att_layout = QVBoxLayout(att_box)
+        att.setContentsMargins(0, SPACING["lg"], 0, 0)
+        att.setSpacing(SPACING["lg"])
 
+        self.att_card = SectionCard(title=t("detail.att.group"))
         self.attendance_table = QTableWidget(0, 5)
         self.attendance_table.setHorizontalHeaderLabels([
             t("detail.att.col.datetime"),
@@ -149,10 +180,10 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.attendance_table.setAlternatingRowColors(True)
         self.attendance_table.setShowGrid(False)
         self.attendance_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        att_layout.addWidget(self.attendance_table)
+        self.att_card.body.addWidget(self.attendance_table)
 
         att_buttons = QHBoxLayout()
-        att_buttons.setSpacing(6)
+        att_buttons.setSpacing(SPACING["sm"])
         self.undo_button = QPushButton(t("detail.att.undo"))
         make_secondary(self.undo_button)
         self.manual_checkin_button = QPushButton(t("detail.att.manual"))
@@ -161,11 +192,12 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         att_buttons.addWidget(self.undo_button)
         att_buttons.addWidget(self.manual_checkin_button)
         att_buttons.addStretch()
-        att_layout.addLayout(att_buttons)
-        att.addWidget(att_box)
+        self.att_card.body.addLayout(att_buttons)
+
+        att.addWidget(self.att_card)
         tabs.addTab(attendance, t("detail.tab.attendance"))
 
-        # ===== Progress =====
+        # ===================== Progress tab =====================
         self.progress_panel = ProgressPanel(self.player_id)
         tabs.addTab(self.progress_panel, t("detail.tab.progress"))
 
@@ -200,16 +232,16 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.progress_panel.refresh()
 
     def _render_sub_status(self):
-        t_ = theme()
+        tm = theme()
         display = getattr(self, "_current_display", None)
         if display is None:
             return
 
         status_token = {
             "active": "success", "expired": "danger",
-            "suspended": "warning", "none": "muted",
-        }.get(display["status"], "muted")
-        color = t_.color(status_token)
+            "suspended": "warning", "none": "text_secondary",
+        }.get(display["status"], "text_secondary")
+        color = tm.color(status_token)
 
         status_word = {
             "active":    t("players.status.active"),
@@ -221,29 +253,38 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         if display["status"] == "none":
             self.sub_status_label.setText(
                 f'<span style="color:{color}; font-weight:700;">{status_word}</span>'
-                f'<span style="color:{t_.color("text_secondary")};">'
+                f'<span style="color:{tm.color("text_secondary")};">'
                 f'  —  استخدم «تفعيل / تجديد اشتراك» لتسجيل هذا اللاعب.</span>'
             )
         else:
             self.sub_status_label.setText(
                 f'<span style="color:{color}; font-weight:700;">{status_word}</span>'
-                f'<span style="color:{t_.color("text_secondary")};">'
+                f'<span style="color:{tm.color("text_secondary")};">'
                 f'  ·  {get_plan_label(display["plan_type"])}'
                 f'  ·  متبقٍ {display["sessions_remaining"]}/{display["sessions_total"]} حصة'
                 f'  ·  ينتهي في {display["expiry_date"]}</span>'
             )
+
+        # Style the label with a slightly larger font and padded appearance
+        self.sub_status_label.setStyleSheet(
+            f"QLabel {{"
+            f"  background-color: transparent;"
+            f"  font-size: 14px;"
+            f"  padding: 4px 0;"
+            f"}}"
+        )
 
     def _load_attendance(self):
         rows = attendance_service.get_for_player(self.player_id)
         self.attendance_table.setRowCount(len(rows))
         self._attendance_rows = rows
 
-        t_ = theme()
+        tm = theme()
         for i, entry in enumerate(rows):
             self.attendance_table.setItem(i, 0, QTableWidgetItem(entry.scan_datetime))
             result_text = t("detail.att.result.allowed") if entry.result == "allowed" else t("detail.att.result.denied")
             result_item = QTableWidgetItem(result_text)
-            color = t_.color("success") if entry.result == "allowed" else t_.color("danger")
+            color = tm.color("success") if entry.result == "allowed" else tm.color("danger")
             result_item.setForeground(QColor(color))
             self.attendance_table.setItem(i, 1, result_item)
             self.attendance_table.setItem(i, 2, QTableWidgetItem(entry.deny_reason or ""))

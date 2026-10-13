@@ -27,9 +27,18 @@ from services import subscription_service, attendance_service
 from logic.validation import validate_check_in
 from ui.dialogs.deny_popup import DenyPopup
 from ui.i18n import t
+from app_state import app as app_state
 
+
+# Legacy constant kept for backward compatibility with v1 callers.
+# New code should rely on the current logged-in user instead.
 RECORDED_BY = "reception"
 
+
+def _current_recorder() -> str:
+    """The username to record on attendance rows. Falls back to 'system'
+    if somehow called before login (shouldn't happen in normal flow)."""
+    return app_state.recorded_by() or "system"
 
 def _translate_reason(raw_reason: str) -> str:
     """Map validation-layer English reason to a localized string."""
@@ -63,7 +72,7 @@ class CheckInOutcome:
 def perform_check_in(
     player_id: int,
     parent_widget=None,
-    recorded_by: str = RECORDED_BY,
+    recorded_by: str = None,
 ) -> Optional[CheckInOutcome]:
     """
     Runs the full pipeline for one player_id.
@@ -72,8 +81,8 @@ def perform_check_in(
     Returns an outcome with was_duplicate=True if already checked in today.
     """
     player = players_repo.get_by_id(player_id)
-    if player is None:
-        return None
+    if recorded_by is None:
+        recorded_by = _current_recorder()
 
     # Once-per-day guard
     # Once-per-day guard

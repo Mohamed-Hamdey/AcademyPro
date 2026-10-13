@@ -1,4 +1,4 @@
-"""Subscription activation dialog — Arabic."""
+"""Subscription activation dialog — v4 design."""
 
 import os
 import sys
@@ -15,6 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from config.config_loader import load_config, get_plan_label
 from services import subscription_service
 from ui.theme import theme, ThemedWidget, make_secondary
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
@@ -24,17 +25,17 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         self.player_id = player_id
         self.activated_by = activated_by
         self.setWindowTitle(t("dlg.sub.title"))
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(400)
         self._build_ui()
         self._init_theme()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setSpacing(SPACING["md"])
 
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(SPACING["sm"])
 
         self.plan_input = QComboBox()
         config = load_config()
@@ -58,6 +59,7 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         self.payment_date_input.setDate(QDate.currentDate())
         self.payment_date_input.dateChanged.connect(self._update_expiry_preview)
 
+        # Expiry preview — shown as a highlighted info chip
         self.expiry_label = QLabel()
 
         form.addRow(t("dlg.sub.plan"), self.plan_input)
@@ -68,6 +70,7 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         layout.addLayout(form)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(SPACING["sm"])
         cancel_button = QPushButton(t("dlg.sub.cancel"))
         make_secondary(cancel_button)
         save_button = QPushButton(t("dlg.sub.activate"))
@@ -82,9 +85,16 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         self._update_expiry_preview()
 
     def restyle(self):
-        t_ = theme()
+        tm = theme()
         self.expiry_label.setStyleSheet(
-            f"color: {t_.color('success')}; font-weight: 700; font-size: 13px;"
+            f"QLabel {{"
+            f"  color: {tm.color('success')};"
+            f"  background-color: {tm.color('success_soft')};"
+            f"  border-radius: {RADIUS['sm']}px;"
+            f"  padding: 4px 10px;"
+            f"  font-weight: 600;"
+            f"  font-size: 13px;"
+            f"}}"
         )
 
     def _update_expiry_preview(self):
