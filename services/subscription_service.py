@@ -1,8 +1,9 @@
 """
 Subscription service — expiry computation, status resolution, activation.
 
-This is where "what does 'active' mean right now" is decided. Repos only
-fetch/store rows; this module interprets them.
+A player may have multiple active subscriptions, one per activity. Each
+has its own sessions count and allowed_days, and they decrement
+independently.
 """
 
 import os
@@ -10,17 +11,16 @@ import sys
 from datetime import date, timedelta
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config.config_loader import get_plan, load_config
+from config.config_loader import load_config
 from models.subscription import Subscription
 from repositories import subscriptions_repo
 
 
+# ---------------------------------------------------------------------------
+# Expiry + activation
+# ---------------------------------------------------------------------------
+
 def compute_expiry_date(start_date: date, payment_date: date = None) -> date:
-    """
-    Computes expiry per the configured policy:
-      - "thirty_days_from_payment": payment_date (or start_date) + 30 days.
-      - "first_of_next_month": the 1st of the month following start_date.
-    """
     config = load_config()
     policy = config.get("expiry_policy", "thirty_days_from_payment")
 
@@ -37,22 +37,13 @@ def activate(
     player_id: int,
     activity_id: int,
     sessions_total: int,
-    allowed_days: list[str],
+    allowed_days: list,
     start_date: date,
     activated_by: str,
     payment_amount: float,
     payment_date: date,
     plan_type: str = None,
 ) -> int:
-    """
-    Create a new subscription row.
-
-    - activity_id: the activity this subscription is for
-    - sessions_total: the open-ended count the receptionist entered
-    - allowed_days: the specific days this player is authorized
-      (defaults to the activity's default_days, but can be overridden)
-    - plan_type: optional preset key for legacy reporting. NULL for custom.
-    """
     if sessions_total <= 0:
         raise ValueError("Sessions count must be greater than zero")
     if not allowed_days:
@@ -76,11 +67,9 @@ def activate(
         payment_date=payment_date.isoformat(),
     )
     return subscriptions_repo.create(sub)
+
+
 def record_payment(subscription_id: int, payment_amount: float, payment_date: date) -> None:
-    """
-    Records a payment against an EXISTING subscription. Recomputes expiry
-    and reactivates unless the new expiry is already in the past.
-    """
     sub = subscriptions_repo.get_by_id(subscription_id)
     if sub is None:
         return
@@ -96,57 +85,68 @@ def record_payment(subscription_id: int, payment_amount: float, payment_date: da
     )
 
 
+# ---------------------------------------------------------------------------
+# Reads
+# ---------------------------------------------------------------------------
+
 def get_active(player_id: int) -> "Subscription | None":
     """
-    Returns the currently-valid subscription for a player, applying lazy
-    expiry correction: if a stored-active row's expiry_date has passed,
-    mark it expired and return None.
+    The single 'current' subscription for a player — the most recent
+    active one that hasn't expired. Kept for backward compatibility with
+    code that only needs one (e.g. the check-in pipeline's default).
+
+    Prefer get_all_active() when you need the full picture.
     """
-    sub = subscriptions_repo.get_active_for_player(player_id)
-    if sub is None:
-        return None
+    subs = get_all_active(player_id)
+    return subs[0] if subs else None
 
-    expiry = date.fromisoformat(sub.expiry_date)
-    if date.today() >= expiry:
-        subscriptions_repo.set_status(sub.subscription_id, "expired")
-        return None
 
-    return sub
+def get_all_active(player_id: int) -> list[Subscription]:
+    """
+    Every currently-valid active subscription for a player.
+
+    Applies lazy expiry: any stored-active row whose expiry_date has
+    passed gets marked expired and excluded from the result.
+    """
+    rows = subscriptions_repo.get_all_active_for_player(player_id)
+    today = date.today()
+    result = []
+    for sub in rows:
+        expiry = date.fromisoformat(sub.expiry_date)
+        if today >= expiry:
+            subscriptions_repo.set_status(sub.subscription_id, "expired")
+            continue
+        result.append(sub)
+    return result
 
 
 def get_display_status(player_id: int) -> dict:
     """
-    Single source of truth for "what is this player's subscription
-    situation right now". Applies lazy-expiry correction.
-    """
-    active = subscriptions_repo.get_active_for_player(player_id)
+    Compact status for the player list: one summary line per player.
 
-    if active is not None:
-        expiry = date.fromisoformat(active.expiry_date)
-        if date.today() >= expiry:
-            subscriptions_repo.set_status(active.subscription_id, "expired")
-            return {
-                "status": "expired",
-                "subscription_id": active.subscription_id,
-                "plan_type": active.plan_type,
-                "sessions_remaining": active.sessions_remaining,
-                "sessions_total": active.sessions_total,
-                "expiry_date": active.expiry_date,
-            }
+    If a player has N active subscriptions, this returns aggregate
+    sessions and a status that is 'active' if any sub is active.
+    """
+    subs = get_all_active(player_id)
+
+    if subs:
         return {
             "status": "active",
-            "subscription_id": active.subscription_id,
-            "plan_type": active.plan_type,
-            "sessions_remaining": active.sessions_remaining,
-            "sessions_total": active.sessions_total,
-            "expiry_date": active.expiry_date,
+            "subscription_id": subs[0].subscription_id,   # most recent
+            "plan_type": subs[0].plan_type,               # most recent's plan
+            "sessions_remaining": sum(s.sessions_remaining for s in subs),
+            "sessions_total": sum(s.sessions_total for s in subs),
+            "expiry_date": max(s.expiry_date for s in subs),  # latest expiry
+            "active_count": len(subs),
         }
 
+    # No active subs. Fall back to the latest historical sub so the player
+    # list still shows a meaningful status (expired/suspended).
     history = subscriptions_repo.get_history_for_player(player_id)
     if not history:
         return {"status": "none", "subscription_id": None, "plan_type": None,
                 "sessions_remaining": None, "sessions_total": None,
-                "expiry_date": None}
+                "expiry_date": None, "active_count": 0}
 
     latest = history[0]
     return {
@@ -156,8 +156,34 @@ def get_display_status(player_id: int) -> dict:
         "sessions_remaining": latest.sessions_remaining,
         "sessions_total": latest.sessions_total,
         "expiry_date": latest.expiry_date,
+        "active_count": 0,
     }
 
+
+def get_display_statuses(player_id: int) -> list[dict]:
+    """
+    One dict per active subscription. Used by the player detail screen
+    to render a table of subscriptions.
+    """
+    subs = get_all_active(player_id)
+    result = []
+    for sub in subs:
+        result.append({
+            "subscription_id": sub.subscription_id,
+            "activity_id": sub.activity_id,
+            "plan_type": sub.plan_type,
+            "sessions_remaining": sub.sessions_remaining,
+            "sessions_total": sub.sessions_total,
+            "expiry_date": sub.expiry_date,
+            "allowed_days": sub.allowed_days,
+            "status": "active",
+        })
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Mutations
+# ---------------------------------------------------------------------------
 
 def suspend(subscription_id: int) -> None:
     subscriptions_repo.set_status(subscription_id, "suspended")

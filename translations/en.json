@@ -391,5 +391,12 @@
   "dlg.sub.error.no_activity": "Please select an activity.",
   "dlg.sub.error.invalid_sessions": "Sessions count must be greater than zero.",
   "dlg.sub.error.no_days": "Please select at least one training day.",
+    "detail.sub.col.activity": "Activity",
+  "detail.sub.col.plan": "Package",
+  "detail.sub.col.sessions": "Sessions",
+  "detail.sub.col.expires": "Expires",
+  "detail.sub.col.days": "Training Days",
+  "detail.sub.custom": "Custom",
+  "detail.sub.none_active": "No active subscription.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

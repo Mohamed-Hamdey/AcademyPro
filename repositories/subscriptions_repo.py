@@ -62,7 +62,28 @@ def get_by_id(subscription_id: int) -> Optional[Subscription]:
     finally:
         conn.close()
 
+def get_all_active_for_player(player_id: int) -> list[Subscription]:
+    """
+    All subscriptions for a player whose stored status is 'active'.
+    Does NOT check expiry_date — the service layer filters those.
 
+    Ordered by start_date DESC so the most-recently-activated sub is
+    first. That's the order the check-in pipeline uses to auto-pick when
+    there's exactly one valid sub today.
+    """
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM subscriptions
+            WHERE player_id = ? AND status = 'active'
+            ORDER BY start_date DESC, subscription_id DESC
+            """,
+            (player_id,),
+        ).fetchall()
+        return [Subscription.from_row(r) for r in rows]
+    finally:
+        conn.close()
 def get_active_for_player(player_id: int) -> Optional[Subscription]:
     """
     Most recent subscription whose stored status is 'active'.

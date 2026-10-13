@@ -1,36 +1,20 @@
 """
-Player detail / admin screen — v4 design.
+Player detail / admin screen — v4 with multi-subscription support.
 
-Layout:
-    ┌────────────────────────────────────────────────────────────┐
-    │  [← Back to Players]                                       │
-    │                                                            │
-    │  ┌─ Overview ─┬─ Attendance ─┬─ Progress ─┐  ← Tabs        │
-    │  │                                          │              │
-    │  │  ┌─ Player card ──┐  ┌─ Actions ──────┐  │              │
-    │  │  │  photo | info  │  │ Edit, QR, …    │  │              │
-    │  │  └────────────────┘  └────────────────┘  │              │
-    │  │                                          │              │
-    │  │  ┌─ Subscription ────────────────────┐   │              │
-    │  │  │  Status · plan · sessions · expiry│   │              │
-    │  │  │  [Activate][Suspend][Adjust][Pay] │   │              │
-    │  │  └───────────────────────────────────┘   │              │
-    │  │                                          │              │
-    │  │  ┌─ Notes ───────────────────────────┐   │              │
-    │  │  │  textarea           [Save Notes]  │   │              │
-    │  │  └───────────────────────────────────┘   │              │
-    │  └──────────────────────────────────────────┘              │
-    └────────────────────────────────────────────────────────────┘
+The Overview tab is wrapped in a scroll area so all sections (player
+card, subscriptions, notes) remain reachable even when the window is
+short or there are multiple subscriptions.
 """
 
 import os
 import sys
 import shutil
 from datetime import date
-from services import audit_service
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit, QTabWidget, QFileDialog,
+    QScrollArea, QFrame,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -38,7 +22,7 @@ from PyQt6.QtGui import QColor
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_plan_label
 from repositories import players_repo
-from services import subscription_service, attendance_service
+from services import subscription_service, attendance_service, activity_service, audit_service
 from services.checkin_service import perform_check_in
 from ui.cards.player_card import PlayerCardWidget
 from ui.dialogs.player_form_dialog import PlayerFormDialog
@@ -47,7 +31,7 @@ from ui.dialogs.adjust_sessions_dialog import AdjustSessionsDialog
 from ui.dialogs.update_payment_dialog import UpdatePaymentDialog
 from logic.qr_utils import generate_qr_for_player
 from ui.screens.progress_view import ProgressPanel
-from ui.components import SectionCard, Toolbar, Pill
+from ui.components import SectionCard, Toolbar
 from ui.theme import theme, ThemedWidget, make_danger, make_secondary
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
@@ -59,16 +43,19 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         QWidget.__init__(self, parent)
         self.player_id = player_id
         self.on_back = on_back
+        self._active_subs = []
         self._build_ui()
         self.refresh()
         self._init_theme()
+
+    # ---------- UI ----------
 
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        # ---- Toolbar: back button ----
+        # Toolbar (back button)
         self.toolbar = Toolbar()
         back_button = QPushButton(t("detail.back"))
         make_secondary(back_button)
@@ -76,15 +63,20 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.toolbar.add_leading(back_button)
         root.addWidget(self.toolbar)
 
-        # ---- Tabs ----
         tabs = QTabWidget()
         root.addWidget(tabs, stretch=1)
 
-        # ===================== Overview tab =====================
+        # ===== Overview tab (scrollable) =====
+        overview_scroll = QScrollArea()
+        overview_scroll.setWidgetResizable(True)
+        overview_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
         overview = QWidget()
         ov = QVBoxLayout(overview)
         ov.setContentsMargins(0, SPACING["lg"], 0, 0)
         ov.setSpacing(SPACING["lg"])
+
+        overview_scroll.setWidget(overview)
 
         # ---- Player card + action buttons ----
         card_row = QHBoxLayout()
@@ -110,14 +102,51 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         card_row.addLayout(card_buttons)
         ov.addLayout(card_row)
 
-        # ---- Subscription card ----
+        # ---- Subscriptions card ----
         self.sub_card = SectionCard(title=t("detail.sub.group"))
-        self.sub_status_label = QLabel()
-        self.sub_status_label.setWordWrap(True)
-        self.sub_card.body.addWidget(self.sub_status_label)
 
+        self.sub_table = QTableWidget(0, 5)
+        self.sub_table.setHorizontalHeaderLabels([
+            t("detail.sub.col.activity"),
+            t("detail.sub.col.plan"),
+            t("detail.sub.col.sessions"),
+            t("detail.sub.col.expires"),
+            t("detail.sub.col.days"),
+        ])
+        hdr = self.sub_table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.sub_table.verticalHeader().setVisible(False)
+        self.sub_table.verticalHeader().setDefaultSectionSize(32)
+        self.sub_table.horizontalHeader().setFixedHeight(34)
+        self.sub_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.sub_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.sub_table.setAlternatingRowColors(True)
+        self.sub_table.setShowGrid(False)
+        self.sub_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.sub_table.itemSelectionChanged.connect(self._on_sub_selection_changed)
+        # Table height: enough for ~3 rows, scrolls beyond that.
+        self.sub_table.setMinimumHeight(150)
+        self.sub_table.setMaximumHeight(260)
+        self.sub_card.body.addWidget(self.sub_table)
+
+        # Empty label
+        self.sub_empty_label = QLabel(t("detail.sub.none_active"))
+        self.sub_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sub_empty_label.setWordWrap(True)
+        self.sub_empty_label.setSizePolicy(
+            self.sub_empty_label.sizePolicy().horizontalPolicy(),
+            self.sub_empty_label.sizePolicy().verticalPolicy().Maximum,
+        )
+        self.sub_card.body.addWidget(self.sub_empty_label)
+
+        # Gap between the table and the button row
+        self.sub_card.body.addSpacing(SPACING["sm"])
+
+        # Buttons row, wrapped in its own widget
         sub_buttons = QHBoxLayout()
         sub_buttons.setSpacing(SPACING["sm"])
+        sub_buttons.setContentsMargins(0, 0, 0, 0)
+
         self.activate_button = QPushButton(t("detail.sub.activate"))
         self.suspend_button = QPushButton(t("detail.sub.suspend"))
         make_danger(self.suspend_button)
@@ -125,15 +154,28 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         make_secondary(self.adjust_button)
         self.record_payment_button = QPushButton(t("detail.sub.record_payment"))
         make_secondary(self.record_payment_button)
+
         self.activate_button.clicked.connect(self._on_activate_subscription)
         self.suspend_button.clicked.connect(self._on_suspend_subscription)
         self.adjust_button.clicked.connect(self._on_adjust_sessions)
         self.record_payment_button.clicked.connect(self._on_record_payment)
-        for b in (self.activate_button, self.suspend_button,
-                  self.adjust_button, self.record_payment_button):
-            sub_buttons.addWidget(b)
+
+        sub_buttons.addWidget(self.activate_button)
+        sub_buttons.addWidget(self.suspend_button)
+        sub_buttons.addWidget(self.adjust_button)
+        sub_buttons.addWidget(self.record_payment_button)
         sub_buttons.addStretch()
-        self.sub_card.body.addLayout(sub_buttons)
+
+        sub_buttons_widget = QWidget()
+        sub_buttons_widget.setLayout(sub_buttons)
+        sub_buttons_widget.setSizePolicy(
+            sub_buttons_widget.sizePolicy().horizontalPolicy(),
+            sub_buttons_widget.sizePolicy().verticalPolicy().Fixed,
+        )
+        self.sub_card.body.addWidget(sub_buttons_widget)
+
+        # Card must be big enough for its contents but not forced larger
+        self.sub_card.setMinimumHeight(260)
         ov.addWidget(self.sub_card)
 
         # ---- Notes card ----
@@ -143,21 +185,17 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         save_notes_button = QPushButton(t("detail.notes.save"))
         make_secondary(save_notes_button)
         save_notes_button.clicked.connect(self._on_save_notes)
-
         self.notes_card.body.addWidget(self.notes_input)
-
-        # Save button on the trailing edge (Qt handles RTL mirroring)
         notes_footer = QHBoxLayout()
         notes_footer.addStretch()
         notes_footer.addWidget(save_notes_button)
         self.notes_card.body.addLayout(notes_footer)
-
         ov.addWidget(self.notes_card)
         ov.addStretch()
 
-        tabs.addTab(overview, t("detail.tab.overview"))
+        tabs.addTab(overview_scroll, t("detail.tab.overview"))
 
-        # ===================== Attendance tab =====================
+        # ===== Attendance tab =====
         attendance = QWidget()
         att = QVBoxLayout(attendance)
         att.setContentsMargins(0, SPACING["lg"], 0, 0)
@@ -193,19 +231,27 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         att_buttons.addWidget(self.manual_checkin_button)
         att_buttons.addStretch()
         self.att_card.body.addLayout(att_buttons)
-
         att.addWidget(self.att_card)
         tabs.addTab(attendance, t("detail.tab.attendance"))
 
-        # ===================== Progress tab =====================
+        # ===== Progress tab =====
         self.progress_panel = ProgressPanel(self.player_id)
         tabs.addTab(self.progress_panel, t("detail.tab.progress"))
 
-    # ---------- theme ----------
+    # ---------- theming ----------
 
     def restyle(self):
-        if hasattr(self, "current_player"):
-            self._render_sub_status()
+        tm = theme()
+        self.sub_empty_label.setStyleSheet(
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  padding: 12px;"
+            f"  font-style: italic;"
+            f"}}"
+        )
+        if hasattr(self, "_active_subs"):
+            self._render_sub_table()
 
     # ---------- data ----------
 
@@ -215,64 +261,71 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             return
         self.current_player = player
 
-        display = subscription_service.get_display_status(self.player_id)
-        active_sub = subscription_service.get_active(self.player_id) if display["status"] == "active" else None
-        self.current_subscription = active_sub
-        self._current_display = display
+        self._active_subs = subscription_service.get_all_active(self.player_id)
+        most_recent = self._active_subs[0] if self._active_subs else None
 
-        self.player_card.display_player(player, active_sub, check_in_state=None)
-        self._render_sub_status()
-
-        self.suspend_button.setEnabled(display["status"] == "active")
-        self.adjust_button.setEnabled(display["status"] == "active")
-        self.record_payment_button.setEnabled(display["subscription_id"] is not None)
+        self.player_card.display_player(player, most_recent, check_in_state=None)
+        self._render_sub_table()
 
         self.notes_input.setPlainText(player.notes or "")
         self._load_attendance()
         self.progress_panel.refresh()
 
-    def _render_sub_status(self):
-        tm = theme()
-        display = getattr(self, "_current_display", None)
-        if display is None:
+    def _render_sub_table(self):
+        subs = self._active_subs
+        if not subs:
+            self.sub_table.hide()
+            self.sub_empty_label.show()
+            self._on_sub_selection_changed()
             return
 
-        status_token = {
-            "active": "success", "expired": "danger",
-            "suspended": "warning", "none": "text_secondary",
-        }.get(display["status"], "text_secondary")
-        color = tm.color(status_token)
+        self.sub_table.show()
+        self.sub_empty_label.hide()
 
-        status_word = {
-            "active":    t("players.status.active"),
-            "expired":   t("players.status.expired"),
-            "suspended": t("players.status.suspended"),
-            "none":      t("players.status.none"),
-        }.get(display["status"], t("players.status.none"))
+        self.sub_table.blockSignals(True)
+        self.sub_table.setRowCount(len(subs))
 
-        if display["status"] == "none":
-            self.sub_status_label.setText(
-                f'<span style="color:{color}; font-weight:700;">{status_word}</span>'
-                f'<span style="color:{tm.color("text_secondary")};">'
-                f'  —  استخدم «تفعيل / تجديد اشتراك» لتسجيل هذا اللاعب.</span>'
+        for i, sub in enumerate(subs):
+            act = activity_service.get(sub.activity_id) if sub.activity_id else None
+            act_name = activity_service.get_localized_name(act) if act else "—"
+            self.sub_table.setItem(i, 0, QTableWidgetItem(act_name))
+
+            if sub.plan_type:
+                plan_label = get_plan_label(sub.plan_type)
+            else:
+                plan_label = t("detail.sub.custom")
+            self.sub_table.setItem(i, 1, QTableWidgetItem(plan_label))
+
+            self.sub_table.setItem(
+                i, 2,
+                QTableWidgetItem(f"{sub.sessions_remaining} / {sub.sessions_total}")
             )
-        else:
-            self.sub_status_label.setText(
-                f'<span style="color:{color}; font-weight:700;">{status_word}</span>'
-                f'<span style="color:{tm.color("text_secondary")};">'
-                f'  ·  {get_plan_label(display["plan_type"])}'
-                f'  ·  متبقٍ {display["sessions_remaining"]}/{display["sessions_total"]} حصة'
-                f'  ·  ينتهي في {display["expiry_date"]}</span>'
-            )
+            self.sub_table.setItem(i, 3, QTableWidgetItem(sub.expiry_date))
+            days = ", ".join(t(f"weekday.{d.lower()}") for d in (sub.allowed_days or []))
+            self.sub_table.setItem(i, 4, QTableWidgetItem(days))
 
-        # Style the label with a slightly larger font and padded appearance
-        self.sub_status_label.setStyleSheet(
-            f"QLabel {{"
-            f"  background-color: transparent;"
-            f"  font-size: 14px;"
-            f"  padding: 4px 0;"
-            f"}}"
-        )
+        self.sub_table.blockSignals(False)
+
+        if subs:
+            self.sub_table.selectRow(0)
+
+        self._on_sub_selection_changed()
+
+    def _selected_sub(self):
+        rows = self.sub_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        idx = rows[0].row()
+        if 0 <= idx < len(self._active_subs):
+            return self._active_subs[idx]
+        return None
+
+    def _on_sub_selection_changed(self):
+        sub = self._selected_sub()
+        has_sel = sub is not None
+        self.suspend_button.setEnabled(has_sel)
+        self.adjust_button.setEnabled(has_sel)
+        self.record_payment_button.setEnabled(has_sel)
 
     def _load_attendance(self):
         rows = attendance_service.get_for_player(self.player_id)
@@ -311,49 +364,47 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             self.refresh()
 
     def _on_suspend_subscription(self):
-        if not self.current_subscription:
+        sub = self._selected_sub()
+        if sub is None:
             return
         if ask(self, t("detail.msg.suspend_title"), t("detail.msg.suspend_body")):
-            subscription_service.suspend(self.current_subscription.subscription_id)
-            audit_service.subscription_suspended(
-                subscription_id=self.current_subscription.subscription_id,
-            )
+            subscription_service.suspend(sub.subscription_id)
+            audit_service.subscription_suspended(subscription_id=sub.subscription_id)
             self.refresh()
 
     def _on_adjust_sessions(self):
-        if not self.current_subscription:
+        sub = self._selected_sub()
+        if sub is None:
             return
         dialog = AdjustSessionsDialog(
-            self.current_subscription.subscription_id,
-            self.current_subscription.sessions_remaining,
-            self.current_subscription.sessions_total,
+            sub.subscription_id,
+            sub.sessions_remaining,
+            sub.sessions_total,
             parent=self,
         )
         if dialog.exec():
-            old = self.current_subscription.sessions_remaining
+            old = sub.sessions_remaining
             new = dialog.new_value()
-            subscription_service.adjust_sessions(
-                self.current_subscription.subscription_id, new
-            )
+            subscription_service.adjust_sessions(sub.subscription_id, new)
             audit_service.subscription_sessions_adjusted(
-                subscription_id=self.current_subscription.subscription_id,
+                subscription_id=sub.subscription_id,
                 old_value=old,
                 new_value=new,
             )
             self.refresh()
 
     def _on_record_payment(self):
-        display = getattr(self, "_current_display", None)
-        if not display or display["subscription_id"] is None:
+        sub = self._selected_sub()
+        if sub is None:
             info(self, t("detail.msg.no_sub_title"), t("detail.msg.no_sub_msg"))
             return
-        current_amount = self.current_subscription.payment_amount if self.current_subscription else 0.0
-        dialog = UpdatePaymentDialog(current_amount or 0.0, parent=self)
+        current_amount = sub.payment_amount or 0.0
+        dialog = UpdatePaymentDialog(current_amount, parent=self)
         if dialog.exec():
             amount, payment_date = dialog.get_values()
-            subscription_service.record_payment(display["subscription_id"], amount, payment_date)
+            subscription_service.record_payment(sub.subscription_id, amount, payment_date)
             audit_service.payment_recorded(
-                subscription_id=display["subscription_id"],
+                subscription_id=sub.subscription_id,
                 amount=amount,
                 payment_date=payment_date.isoformat(),
             )
@@ -384,8 +435,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             return
         if attendance_service.undo_check_in(entry.log_id, date.today()):
             audit_service.attendance_undone(
-                log_id=entry.log_id,
-                player_id=self.player_id,
+                log_id=entry.log_id, player_id=self.player_id
             )
             self.refresh()
         else:
@@ -393,11 +443,11 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
     def _on_manual_check_in(self):
         outcome = perform_check_in(self.player_id, parent_widget=self)
-        audit_service.manual_checkin(player_id=self.player_id)
         if outcome is None:
             warn(self, t("checkin.unknown_player_title"),
                  t("detail.msg.player_not_found"))
             return
+        audit_service.manual_checkin(player_id=self.player_id)
         self.refresh()
 
     def _on_reissue_qr(self):

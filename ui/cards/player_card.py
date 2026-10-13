@@ -194,18 +194,18 @@ class PlayerCardWidget(QFrame, ThemedWidget):
         self.id_label.setText(f"ID: {player.player_id}")
 
 
-        # Group is gone — replaced by activities. Show the subscription's
-        # activity if we have one. Otherwise a dash.
-        if subscription:
-            try:
-                from services import activity_service
-                act = activity_service.get(subscription.activity_id) if subscription.activity_id else None
-                self.group_label.setText(
-                    activity_service.get_localized_name(act) if act else "—"
-                )
-            except Exception:
-                self.group_label.setText("—")
-        else:
+        # Show ALL activities the player is currently enrolled in.
+        try:
+            from services import subscription_service, activity_service
+            subs = subscription_service.get_all_active(player.player_id)
+            activity_names = []
+            for sub in subs:
+                if sub.activity_id:
+                    act = activity_service.get(sub.activity_id)
+                    if act:
+                        activity_names.append(activity_service.get_localized_name(act))
+            self.group_label.setText(", ".join(activity_names) if activity_names else "—")
+        except Exception:
             self.group_label.setText("—")
 
         if check_in_state == "checked_in":

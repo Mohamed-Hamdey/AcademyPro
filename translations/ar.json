@@ -385,6 +385,13 @@
   "dlg.sub.error.no_activity": "الرجاء اختيار نشاط.",
   "dlg.sub.error.invalid_sessions": "عدد الحصص يجب أن يكون أكبر من صفر.",
   "dlg.sub.error.no_days": "الرجاء اختيار يوم تدريب واحد على الأقل.",
+    "detail.sub.col.activity": "النشاط",
+  "detail.sub.col.plan": "الباقة",
+  "detail.sub.col.sessions": "الحصص",
+  "detail.sub.col.expires": "ينتهي في",
+  "detail.sub.col.days": "أيام التدريب",
+  "detail.sub.custom": "مخصص",
+  "detail.sub.none_active": "لا يوجد اشتراك نشط حالياً.",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 
