@@ -1,16 +1,15 @@
 """
 Player detail / admin screen — v4 with multi-subscription support.
 
-The Overview tab is wrapped in a scroll area so all sections (player
-card, subscriptions, notes) remain reachable even when the window is
-short or there are multiple subscriptions.
+Every tab is wrapped in a scroll area so all sections remain reachable
+even when the window is short or there are many rows.
 """
 
 import os
 import sys
 import shutil
 from datetime import date
-
+from ui.screens.player_records_tab import PlayerRecordsTab
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit, QTabWidget, QFileDialog,
@@ -30,7 +29,6 @@ from ui.dialogs.subscription_form_dialog import SubscriptionFormDialog
 from ui.dialogs.adjust_sessions_dialog import AdjustSessionsDialog
 from ui.dialogs.update_payment_dialog import UpdatePaymentDialog
 from logic.qr_utils import generate_qr_for_player
-from ui.screens.progress_view import ProgressPanel
 from ui.components import SectionCard, Toolbar
 from ui.theme import theme, ThemedWidget, make_danger, make_secondary
 from ui.design import SPACING, RADIUS
@@ -75,10 +73,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         ov = QVBoxLayout(overview)
         ov.setContentsMargins(0, SPACING["lg"], 0, 0)
         ov.setSpacing(SPACING["lg"])
-
         overview_scroll.setWidget(overview)
 
-        # ---- Player card + action buttons ----
+        # Player card + action buttons
         card_row = QHBoxLayout()
         card_row.setSpacing(SPACING["lg"])
         self.player_card = PlayerCardWidget()
@@ -102,7 +99,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         card_row.addLayout(card_buttons)
         ov.addLayout(card_row)
 
-        # ---- Subscriptions card ----
+        # Subscriptions card
         self.sub_card = SectionCard(title=t("detail.sub.group"))
 
         self.sub_table = QTableWidget(0, 5)
@@ -124,12 +121,10 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.sub_table.setShowGrid(False)
         self.sub_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.sub_table.itemSelectionChanged.connect(self._on_sub_selection_changed)
-        # Table height: enough for ~3 rows, scrolls beyond that.
         self.sub_table.setMinimumHeight(150)
         self.sub_table.setMaximumHeight(260)
         self.sub_card.body.addWidget(self.sub_table)
 
-        # Empty label
         self.sub_empty_label = QLabel(t("detail.sub.none_active"))
         self.sub_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.sub_empty_label.setWordWrap(True)
@@ -139,10 +134,8 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         )
         self.sub_card.body.addWidget(self.sub_empty_label)
 
-        # Gap between the table and the button row
         self.sub_card.body.addSpacing(SPACING["sm"])
 
-        # Buttons row, wrapped in its own widget
         sub_buttons = QHBoxLayout()
         sub_buttons.setSpacing(SPACING["sm"])
         sub_buttons.setContentsMargins(0, 0, 0, 0)
@@ -174,11 +167,10 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         )
         self.sub_card.body.addWidget(sub_buttons_widget)
 
-        # Card must be big enough for its contents but not forced larger
         self.sub_card.setMinimumHeight(260)
         ov.addWidget(self.sub_card)
 
-        # ---- Notes card ----
+        # Notes card
         self.notes_card = SectionCard(title=t("detail.notes.group"))
         self.notes_input = QTextEdit()
         self.notes_input.setMaximumHeight(90)
@@ -195,7 +187,11 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         tabs.addTab(overview_scroll, t("detail.tab.overview"))
 
-        # ===== Attendance tab =====
+        # ===== Attendance tab (scrollable) =====
+        attendance_scroll = QScrollArea()
+        attendance_scroll.setWidgetResizable(True)
+        attendance_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
         attendance = QWidget()
         att = QVBoxLayout(attendance)
         att.setContentsMargins(0, SPACING["lg"], 0, 0)
@@ -218,6 +214,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.attendance_table.setAlternatingRowColors(True)
         self.attendance_table.setShowGrid(False)
         self.attendance_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.attendance_table.setMinimumHeight(200)
         self.att_card.body.addWidget(self.attendance_table)
 
         att_buttons = QHBoxLayout()
@@ -230,13 +227,27 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         att_buttons.addWidget(self.undo_button)
         att_buttons.addWidget(self.manual_checkin_button)
         att_buttons.addStretch()
-        self.att_card.body.addLayout(att_buttons)
-        att.addWidget(self.att_card)
-        tabs.addTab(attendance, t("detail.tab.attendance"))
 
-        # ===== Progress tab =====
-        self.progress_panel = ProgressPanel(self.player_id)
-        tabs.addTab(self.progress_panel, t("detail.tab.progress"))
+        att_buttons_widget = QWidget()
+        att_buttons_widget.setLayout(att_buttons)
+        att_buttons_widget.setSizePolicy(
+            att_buttons_widget.sizePolicy().horizontalPolicy(),
+            att_buttons_widget.sizePolicy().verticalPolicy().Fixed,
+        )
+        self.att_card.body.addWidget(att_buttons_widget)
+        att.addWidget(self.att_card)
+        att.addStretch()
+
+        attendance_scroll.setWidget(attendance)
+        tabs.addTab(attendance_scroll, t("detail.tab.attendance"))
+
+        # ===== Records & Activity tab (scrollable) =====
+        records_scroll = QScrollArea()
+        records_scroll.setWidgetResizable(True)
+        records_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.records_tab = PlayerRecordsTab(self.player_id, player_name="")
+        records_scroll.setWidget(self.records_tab)
+        tabs.addTab(records_scroll, t("detail.tab.records"))
 
     # ---------- theming ----------
 
@@ -269,7 +280,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         self.notes_input.setPlainText(player.notes or "")
         self._load_attendance()
-        self.progress_panel.refresh()
+        if hasattr(self, "records_tab"):
+            self.records_tab.player_name = player.full_name
+            self.records_tab.refresh()
 
     def _render_sub_table(self):
         subs = self._active_subs
@@ -447,7 +460,50 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             warn(self, t("checkin.unknown_player_title"),
                  t("detail.msg.player_not_found"))
             return
-        audit_service.manual_checkin(player_id=self.player_id)
+
+        # Duplicate? Inform and stop.
+        if getattr(outcome, "was_duplicate", False):
+            warn(
+                self,
+                t("checkin.already_today_title"),
+                t("checkin.already_today_msg", name=outcome.player.full_name),
+            )
+            return
+
+        # Not enrolled in the currently-selected activity? Shouldn't
+        # happen from this screen, but guard anyway.
+        if getattr(outcome, "not_enrolled_in_activity", False):
+            warn(
+                self,
+                t("checkin.not_enrolled.title"),
+                t("checkin.not_enrolled.msg",
+                  name=outcome.player.full_name,
+                  activity=outcome.missing_activity_name),
+            )
+            return
+
+        # Multiple valid subscriptions → picker.
+        if getattr(outcome, "needs_picker", False):
+            from ui.dialogs.activity_picker_dialog import ActivityPickerDialog
+            picker = ActivityPickerDialog(
+                outcome.player.full_name,
+                outcome.valid_subscriptions,
+                parent=self,
+            )
+            if picker.exec() != picker.DialogCode.Accepted:
+                return
+            outcome = perform_check_in(
+                self.player_id,
+                parent_widget=self,
+                preselect_subscription_id=picker.chosen_subscription_id,
+            )
+            if outcome is None:
+                return
+
+        # Audit — only after a real check-in.
+        if outcome.checked_in:
+            audit_service.manual_checkin(player_id=self.player_id)
+
         self.refresh()
 
     def _on_reissue_qr(self):
