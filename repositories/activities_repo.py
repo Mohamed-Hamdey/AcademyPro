@@ -165,3 +165,22 @@ def count_active_subscriptions(activity_id: int) -> int:
         return row[0] if row else 0
     finally:
         conn.close()
+        
+def count_active_subscriptions_by_status(activity_id: int) -> int:
+    """
+    How many subscriptions for this activity are currently 'active'.
+
+    Note: `count_active_subscriptions` above counts ALL subs referencing
+    the activity regardless of status (its name is misleading). This
+    function is the honest one: it counts only rows with status='active'.
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM subscriptions "
+            "WHERE activity_id = ? AND status = 'active'",
+            (activity_id,),
+        ).fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()

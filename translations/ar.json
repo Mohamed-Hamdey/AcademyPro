@@ -649,6 +649,9 @@
   "card.national_id_label": "الرقم القومي",
   "card.sessions_value": "المتبقي {remaining} من {total}",
   "card.no_data": "—",
+    "activities.col.subscriptions": "الاشتراكات (نشط / إجمالي)",
+  "activities.no_results": "لا توجد أنشطة مطابقة لبحثك.",
+  "activities.no_results_hint": "جرّب تعديل كلمات البحث أو مسحه لعرض جميع الأنشطة.",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

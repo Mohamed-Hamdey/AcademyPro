@@ -654,6 +654,9 @@
 
   "dash.month.no_revenue": "No revenue recorded this month.",
   "dash.payments.total": "Total ({count} payments): {amount} EGP",
+    "activities.col.subscriptions": "Subscriptions (active / total)",
+  "activities.no_results": "No activities match your search.",
+  "activities.no_results_hint": "Try adjusting your search or clearing it to see all activities.",
   "checkin.not_enrolled.msg": "Player \"{name}\" is not enrolled in \"{activity}\". Change the session or pick the correct activity.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

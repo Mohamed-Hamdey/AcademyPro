@@ -107,3 +107,7 @@ def count_references(activity_id: int) -> int:
     """How many subscriptions reference this activity (for the delete
     confirmation message)."""
     return activities_repo.count_active_subscriptions(activity_id)
+
+def count_active_references(activity_id: int) -> int:
+    """Number of subscriptions for this activity with status='active'."""
+    return activities_repo.count_active_subscriptions_by_status(activity_id)
