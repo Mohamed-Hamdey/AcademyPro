@@ -19,6 +19,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from config.config_loader import get_academy_name, get_academy_logo, load_config
 from services import auth_service
 from app_state import app as app_state
+from services import auth_service, audit_service
 from ui import i18n
 from ui.theme import theme, ThemedWidget
 from ui.design import SPACING, RADIUS, TYPOGRAPHY
@@ -191,11 +192,14 @@ class LoginDialog(ThemedWidget, QDialog):
         result = auth_service.login(username, password)
 
         if result.status == "bad_credentials":
+            # Audit BEFORE showing the error — the attempt is what matters.
+            audit_service.auth_login_failed(username, reason="bad_credentials")
             self._show_error(t("login.error.bad_credentials"))
             self.password_input.clear()
             return
 
         if result.status == "inactive":
+            audit_service.auth_login_failed(username, reason="inactive")
             self._show_error(t("login.error.inactive"))
             return
 
@@ -209,13 +213,19 @@ class LoginDialog(ThemedWidget, QDialog):
             )
             if changer.exec() != QDialog.DialogCode.Accepted:
                 # User cancelled the forced change — bail out.
+                # Note: we do NOT record auth.login here because the login
+                # didn't complete. A "bootstrap login abandoned" record
+                # is out of scope for now.
                 return
-            # Password changed; re-fetch the user (its hash is now real).
+            # Password changed successfully. Log the login now that
+            # app_state is populated so the audit row reflects the user.
             user = result.user
             app_state.set_user(user)
+            audit_service.auth_login(user.username)
             self.accept()
             return
 
         # Normal successful login
         app_state.set_user(result.user)
+        audit_service.auth_login(result.user.username)
         self.accept()

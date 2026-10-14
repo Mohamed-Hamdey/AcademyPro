@@ -653,6 +653,9 @@
       "expenses.breakdown.by_category": "المصروفات حسب التصنيف",
   "activities.no_results": "لا توجد أنشطة مطابقة لبحثك.",
   "activities.no_results_hint": "جرّب تعديل كلمات البحث أو مسحه لعرض جميع الأنشطة.",
+    "audit.action.auth.login": "تسجيل دخول",
+  "audit.action.auth.login_failed": "فشل تسجيل الدخول",
+  "audit.action.auth.logout": "تسجيل خروج",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

@@ -24,16 +24,28 @@ from app_state import app as app_state
 def record(action: str,
            target_type: str = None,
            target_id: int = None,
-           details: dict = None) -> int:
+           details: dict = None,
+           username: str = None) -> int:
     """
     Write one audit entry for the currently logged-in user.
+
+    `username` is an optional override — used by pre-auth events
+    (e.g. failed login attempts) where there is no authenticated user
+    but we still know which username was attempted. When the override
+    is set, `user_id` is recorded as None.
+
     Called from anywhere; never raises on failure — an audit write
     failing should not break the underlying action.
     """
     try:
-        user = app_state.user
-        user_id = user.user_id if user else None
-        username = user.username if user else "system"
+        if username is None:
+            user = app_state.user
+            user_id = user.user_id if user else None
+            username = user.username if user else "system"
+        else:
+            # Explicit override — pre-auth event, no authenticated user.
+            user_id = None
+
         return audit_repo.write(
             user_id=user_id,
             username=username,
@@ -105,3 +117,27 @@ def manual_checkin(player_id: int):
 def checkin_override(player_id: int, note: str):
     record("attendance.override", target_type="player", target_id=player_id,
            details={"note": note})
+    
+# -------- auth events --------
+# These two are called from the login screen. `auth.login` fires AFTER
+# app_state has been populated, so it records as the real user.
+# `auth.login_failed` fires BEFORE app_state is set (or with no user),
+# so it lands with username="system" and user_id=None — which is exactly
+# what we want for an unsuccessful attempt.
+
+def auth_login(username: str):
+    record("auth.login", target_type="user",
+           details={"username": username})
+
+def auth_login_failed(attempted_username: str, reason: str = "bad_credentials"):
+    record(
+        "auth.login_failed",
+        # The username column shows WHO the attempt was for, which is
+        # more useful at a glance than "system". user_id stays None
+        # because no one was actually authenticated.
+        username=attempted_username,
+        details={"reason": reason},
+    )
+
+def auth_logout(username: str):
+    record("auth.logout", details={"username": username})

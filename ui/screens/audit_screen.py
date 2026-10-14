@@ -76,7 +76,6 @@ class AuditScreen(ThemedWidget, QWidget):
         self.date_to.dateChanged.connect(self.refresh)
 
         self.clear_button = QPushButton(t("audit.clear_filters"))
-        make_secondary(self.clear_button)
         self.clear_button.clicked.connect(self._clear_filters)
 
         self.toolbar.add_leading(self.search_input, stretch=1)
@@ -113,6 +112,8 @@ class AuditScreen(ThemedWidget, QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        # Give Details most of the leftover space.
+        header.setStretchLastSection(True)
 
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -120,15 +121,21 @@ class AuditScreen(ThemedWidget, QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setMinimumHeight(380)
 
         self.table_card.body.addWidget(self.table)
-        root.addWidget(self.table_card, stretch=1)
 
-        # Empty state overlay (shown when table is empty)
+        # Empty state — shown instead of the table when there are no rows.
         self.empty_state = EmptyState(
             icon="🗒",
             message=t("audit.empty"),
         )
+        self.empty_state.hide()
+        self.table_card.body.addWidget(self.empty_state)
+
+        # Card hugs content; leftover space collapses below.
+        root.addWidget(self.table_card)
+        root.addStretch()
 
     # ---------- theming ----------
 
@@ -168,6 +175,14 @@ class AuditScreen(ThemedWidget, QWidget):
         self.date_to.setDate(QDate.currentDate())
 
     def _render_rows(self, entries):
+        if not entries:
+            self.table.hide()
+            self.empty_state.show()
+            return
+
+        self.table.show()
+        self.empty_state.hide()
+
         self.table.setRowCount(len(entries))
         tm = theme()
 

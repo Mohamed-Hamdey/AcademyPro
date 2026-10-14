@@ -6,6 +6,7 @@ import os
 import sys
 from datetime import date, timedelta
 
+from services import dashboard_service, activity_service, dashboard_pdf
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QScrollArea, QFrame, QTabWidget, QDateEdit, QTableWidget,
@@ -109,11 +110,22 @@ class DashboardScreen(ThemedWidget, QWidget):
         make_secondary(self.today_button)
         self.today_button.clicked.connect(self._on_jump_today)
 
+        self.print_day_button = QPushButton(t("dash.print_day"))
+        self.print_day_button.setFixedHeight(38)
+        self.print_day_button.clicked.connect(self._on_print_day)
+
         self.toolbar.add_leading(QLabel(t("dash.date_label")))
         self.toolbar.add_leading(self.prev_button)
         self.toolbar.add_leading(self.date_input)
         self.toolbar.add_leading(self.next_button)
         self.toolbar.add_leading(self.today_button)
+        self.toolbar.add_trailing(self.print_day_button)
+
+        # Small trailing inset so the print button isn't flush against
+        # the workspace edge (and the scrollbar below it).
+        inset = QWidget()
+        inset.setFixedWidth(SPACING["sm"])
+        self.toolbar.add_trailing(inset)
 
         root.addWidget(self.toolbar)
 
@@ -308,7 +320,16 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.month_selector.setCurrentIndex(len(self._month_options) - 1)
         self.month_selector.currentIndexChanged.connect(self._on_month_changed)
 
+        self.print_month_button = QPushButton(t("dash.print_month"))
+        self.print_month_button.setFixedHeight(38)
+        self.print_month_button.clicked.connect(self._on_print_month)
+
         self.month_toolbar.add_leading(self.month_selector)
+        self.month_toolbar.add_trailing(self.print_month_button)
+
+        inset = QWidget()
+        inset.setFixedWidth(SPACING["sm"])
+        self.month_toolbar.add_trailing(inset)
         root.addWidget(self.month_toolbar)
 
         scroll = QScrollArea()
@@ -441,7 +462,26 @@ class DashboardScreen(ThemedWidget, QWidget):
 
     def _on_month_changed(self, _idx):
         self._refresh_month()
+    # ---------- printing ----------
 
+    def _on_print_day(self):
+        """Print the currently-selected day as a PDF / hard copy."""
+        try:
+            dashboard_pdf.print_day(self, self._selected_date)
+        except Exception as e:
+            print(f"[dashboard] print_day failed: {e}")
+            from ui.message_box import warn
+            warn(self, t("dash.print_dialog.day_title"), str(e))
+
+    def _on_print_month(self):
+        """Print the currently-selected month as a PDF / hard copy."""
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        try:
+            dashboard_pdf.print_month(self, y, m)
+        except Exception as e:
+            print(f"[dashboard] print_month failed: {e}")
+            from ui.message_box import warn
+            warn(self, t("dash.print_dialog.month_title"), str(e))
     def _on_filters_changed(self, _idx):
         self._sport_filter_id = self.sport_filter.currentData()
         self._method_filter = self.method_filter.currentData()

@@ -658,6 +658,9 @@
   "activities.no_results": "No activities match your search.",
   "activities.no_results_hint": "Try adjusting your search or clearing it to see all activities.",
     "expenses.breakdown.by_category": "Expenses by category",
+      "audit.action.auth.login": "Signed in",
+  "audit.action.auth.login_failed": "Sign-in failed",
+  "audit.action.auth.logout": "Signed out",
   "checkin.not_enrolled.msg": "Player \"{name}\" is not enrolled in \"{activity}\". Change the session or pick the correct activity.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

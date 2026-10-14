@@ -152,6 +152,16 @@ class MainWindow(QMainWindow):
         """Clear the session and return to the login dialog."""
         from PyQt6.QtWidgets import QApplication
 
+        # Audit the logout BEFORE clearing app_state — otherwise the
+        # record falls through to "system".
+        try:
+            user = app_state.user
+            if user is not None:
+                from services import audit_service
+                audit_service.auth_logout(user.username)
+        except Exception:
+            pass
+
         app_state.clear()
         self.close()
 
@@ -165,7 +175,6 @@ class MainWindow(QMainWindow):
         new_window = MainWindow()
         _current_window = new_window
         new_window.show()
-
     # ---------- language switch ----------
 
     def _switch_language(self):

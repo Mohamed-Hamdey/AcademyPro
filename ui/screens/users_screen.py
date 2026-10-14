@@ -59,8 +59,8 @@ def _make_initial_avatar(display_name: str, role: str) -> QPixmap:
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     p.setBrush(QBrush(QColor(_role_color(role))))
     p.setPen(Qt.PenStyle.NoPen)
-    p.drawRoundedRect(0, 0, _AVATAR_SIZE, _AVATAR_SIZE, 8, 8)
-
+    radius = _AVATAR_SIZE // 2
+    p.drawRoundedRect(0, 0, _AVATAR_SIZE, _AVATAR_SIZE, radius, radius)
     p.setPen(QColor("#FFFFFF"))
     f = QFont()
     f.setPixelSize(16)
@@ -157,16 +157,12 @@ class UsersScreen(ThemedWidget, QWidget):
         self.table.cellDoubleClicked.connect(self._on_row_double_clicked)
 
         self.table_card.body.addWidget(self.table)
-        root.addWidget(self.table_card, stretch=1)
 
-        # ---- Action row ----
+        # ---- Action row (inside the card, right-aligned) ----
+        self.table_card.body.addSpacing(SPACING["sm"])
+
         action_row = QHBoxLayout()
         action_row.setSpacing(SPACING["sm"])
-
-        self.edit_button = QPushButton(t("users.action.edit"))
-        make_secondary(self.edit_button)
-        self.edit_button.clicked.connect(self._on_edit)
-        self.edit_button.setEnabled(False)
 
         self.change_pw_button = QPushButton(t("users.action.change_password"))
         make_secondary(self.change_pw_button)
@@ -178,11 +174,14 @@ class UsersScreen(ThemedWidget, QWidget):
         self.toggle_active_button.clicked.connect(self._on_toggle_active)
         self.toggle_active_button.setEnabled(False)
 
-        action_row.addWidget(self.edit_button)
+        action_row.addStretch()
         action_row.addWidget(self.change_pw_button)
         action_row.addWidget(self.toggle_active_button)
-        action_row.addStretch()
-        root.addLayout(action_row)
+        self.table_card.body.addLayout(action_row)
+
+        # Card hugs its content; leftover space collapses below.
+        root.addWidget(self.table_card)
+        root.addStretch()
 
     # ---------- theming ----------
 
@@ -195,10 +194,20 @@ class UsersScreen(ThemedWidget, QWidget):
     # ---------- data ----------
 
     def refresh(self):
+        # Preserve selection across refresh, if possible.
+        prev = self._selected_user()
+        prev_id = prev.user_id if prev else None
+
         query = self.search_input.text().strip()
         rows = users_repo.search(query) if query else users_repo.list_all()
         self._rows = rows
         self._render_rows(rows)
+
+        if prev_id is not None:
+            for i, u in enumerate(rows):
+                if u.user_id == prev_id:
+                    self.table.selectRow(i)
+                    break
 
     def _render_rows(self, users: list[User]):
         self.table.setRowCount(len(users))
@@ -232,8 +241,10 @@ class UsersScreen(ThemedWidget, QWidget):
             status_item.setBackground(QColor(bg))
             self.table.setItem(i, 4, status_item)
 
-            # Last login
+            # Last login — "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DD HH:MM"
             last_login = user.last_login or "—"
+            if last_login != "—" and len(last_login) >= 16:
+                last_login = last_login[:16]
             self.table.setItem(i, 5, QTableWidgetItem(last_login))
 
         self._update_action_buttons()
@@ -261,18 +272,33 @@ class UsersScreen(ThemedWidget, QWidget):
         user = self._selected_user()
         has_selection = user is not None
 
-        self.edit_button.setEnabled(has_selection)
         self.change_pw_button.setEnabled(has_selection)
-        self.toggle_active_button.setEnabled(has_selection)
 
+        # Toggle button: enabled only when the action is actually allowed.
+        toggle_enabled = False
         if has_selection:
-            # Toggle button label reflects what the action will do
-            if user.active:
-                self.toggle_active_button.setText(t("users.action.deactivate"))
-                make_danger(self.toggle_active_button)
-            else:
+            # Reset label/style to the "deactivate" default first.
+            self.toggle_active_button.setText(t("users.action.deactivate"))
+            make_danger(self.toggle_active_button)
+
+            if not user.active:
+                # Reactivating is always allowed.
                 self.toggle_active_button.setText(t("users.action.activate"))
                 make_secondary(self.toggle_active_button)
+                toggle_enabled = True
+            else:
+                # Deactivating — block self and last-manager.
+                is_self = (
+                    app_state.user is not None
+                    and user.user_id == app_state.user.user_id
+                )
+                is_last_manager = (
+                    user.role == "manager"
+                    and users_repo.count_active_managers() == 1
+                )
+                toggle_enabled = not (is_self or is_last_manager)
+
+        self.toggle_active_button.setEnabled(toggle_enabled)
 
     # ---------- actions ----------
 
