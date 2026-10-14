@@ -78,6 +78,97 @@ def get_for_player(player_id: int) -> list[AttendanceLog]:
         conn.close()
 
 
+
+def get_today_with_details(limit: int = 50) -> list[dict]:
+    """
+    Today's check-ins with everything the scan screen's Recent panel needs:
+
+        log_id, player_id, player_name,
+        scan_datetime, time_only,
+        result, deny_reason, was_override, override_note,
+        subscription_id, activity_id,
+        activity_name_en, activity_name_ar,
+        recorded_by
+
+    Ordered newest first. Limited to today's calendar date in local time
+    (substr(scan_datetime, 1, 10) = today).
+    """
+    from datetime import date as _date
+    today_str = _date.today().isoformat()
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT a.log_id,
+                   a.player_id,
+                   pl.full_name     AS player_name,
+                   a.scan_datetime,
+                   substr(a.scan_datetime, 12, 5) AS time_only,
+                   a.result,
+                   a.deny_reason,
+                   a.was_override,
+                   a.override_note,
+                   a.subscription_id,
+                   a.activity_id,
+                   act.name_en      AS activity_name_en,
+                   act.name_ar      AS activity_name_ar,
+                   a.recorded_by
+            FROM attendance_log a
+            LEFT JOIN players    pl  ON pl.player_id    = a.player_id
+            LEFT JOIN activities act ON act.activity_id = a.activity_id
+            WHERE substr(a.scan_datetime, 1, 10) = ?
+            ORDER BY a.scan_datetime DESC
+            LIMIT ?
+            """,
+            (today_str, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+        
+def get_by_date_with_details(day, limit: int = 200) -> list[dict]:
+    """
+    Same shape as get_today_with_details, but for an arbitrary date.
+
+    `day` may be a datetime.date or an ISO string ("YYYY-MM-DD").
+    Used by the full-log dialog's date picker.
+    """
+    from datetime import date as _date
+    if isinstance(day, _date):
+        day_str = day.isoformat()
+    else:
+        day_str = str(day)
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT a.log_id,
+                   a.player_id,
+                   pl.full_name     AS player_name,
+                   a.scan_datetime,
+                   substr(a.scan_datetime, 12, 5) AS time_only,
+                   a.result,
+                   a.deny_reason,
+                   a.was_override,
+                   a.override_note,
+                   a.subscription_id,
+                   a.activity_id,
+                   act.name_en      AS activity_name_en,
+                   act.name_ar      AS activity_name_ar,
+                   a.recorded_by
+            FROM attendance_log a
+            LEFT JOIN players    pl  ON pl.player_id    = a.player_id
+            LEFT JOIN activities act ON act.activity_id = a.activity_id
+            WHERE substr(a.scan_datetime, 1, 10) = ?
+            ORDER BY a.scan_datetime DESC
+            LIMIT ?
+            """,
+            (day_str, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 def get_recent_with_names(limit: int = 5) -> list[dict]:
     conn = get_connection()
     try:

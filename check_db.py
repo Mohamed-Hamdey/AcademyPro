@@ -1,53 +1,19 @@
-"""Quick diagnostic: list tables and check migration state."""
 import os
-import sqlite3
 
-db_path = os.path.join(
-    os.environ["LOCALAPPDATA"], "AcademySystem", "academy.db"
-)
-print(f"DB path: {db_path}")
-print(f"Exists:  {os.path.exists(db_path)}")
-print()
+directory = r"E:\Downloads\academy-system"
+output_file = "directory_tree.txt"
 
-if not os.path.exists(db_path):
-    print("No database file. Run `python main.py` once to trigger migrations.")
-    raise SystemExit(0)
+with open(output_file, "w", encoding="utf-8") as f:
+    for root, dirs, files in os.walk(directory):
+        dirs.sort()
+        files.sort()
 
-conn = sqlite3.connect(db_path)
-conn.row_factory = sqlite3.Row
+        level = os.path.relpath(root, directory).count(os.sep)
+        indent = "    " * level
 
-tables = [r[0] for r in conn.execute(
-    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-)]
-print("Tables:")
-for t in tables:
-    print(f"  - {t}")
-print()
+        f.write(f"{indent}{os.path.basename(root)}/\n")
 
-if "schema_version" in tables:
-    rows = conn.execute("SELECT version, description, applied_at FROM schema_version").fetchall()
-    print("schema_version:")
-    for r in rows:
-        print(f"  v{r['version']}: {r['description']}  (applied {r['applied_at']})")
-else:
-    print("schema_version table missing — migrations have not run.")
-print()
+        for file in files:
+            f.write(f"{indent}    {file}\n")
 
-if "activities" in tables:
-    rows = conn.execute("SELECT activity_id, name_en, name_ar, default_days, active FROM activities").fetchall()
-    print("activities:")
-    for r in rows:
-        print(f"  [{r['activity_id']}] {r['name_en']} / {r['name_ar']}  days={r['default_days']}  active={r['active']}")
-else:
-    print("activities table missing.")
-print()
-
-if "users" in tables:
-    rows = conn.execute("SELECT user_id, username, role FROM users").fetchall()
-    print("users:")
-    for r in rows:
-        print(f"  [{r['user_id']}] {r['username']}  role={r['role']}")
-else:
-    print("users table missing.")
-
-conn.close()
+print(f"Directory tree saved to {output_file}")

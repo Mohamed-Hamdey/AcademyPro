@@ -403,3 +403,164 @@ def _expiring_soon(days: int = 7) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+        
+# ---------------------------------------------------------------------------
+# Comparison metrics (for KPI badges)
+# ---------------------------------------------------------------------------
+
+def compare_day_to_baselines(d: date) -> dict:
+    """
+    Return comparison percentages for the four daily KPIs:
+      revenue, expenses, net, attendance.
+
+    Baselines:
+      yesterday       — the previous calendar day
+      same_weekday    — 7 days back
+      week_avg        — average over the last 7 days (excluding d itself)
+
+    Each entry is a dict: {"pct": float|None, "absolute": float}
+    where pct is percentage change (None if baseline is 0/unknown).
+    """
+    today = day_summary(d)
+    yesterday = day_summary(d - timedelta(days=1))
+    same_wd = day_summary(d - timedelta(days=7))
+
+    week_summary = {"revenue": 0.0, "expenses": 0.0, "net": 0.0, "attendance_total": 0}
+    for i in range(1, 8):
+        s = day_summary(d - timedelta(days=i))
+        week_summary["revenue"] += s["revenue"]
+        week_summary["expenses"] += s["expenses"]
+        week_summary["net"] += s["net"]
+        week_summary["attendance_total"] += s["attendance_total"]
+
+    def _pct(current, baseline):
+        if baseline == 0:
+            if current == 0:
+                return 0.0
+            return None  # undefined — baseline was zero
+        return round(((current - baseline) / baseline) * 100, 1)
+
+    def _badge(current_key, summary_current, summary_other):
+        cur = summary_current.get(current_key, 0) or 0
+        base = summary_other.get(current_key, 0) or 0
+        return {
+            "pct": _pct(cur, base),
+            "absolute": cur - base,
+        }
+
+    def _avg(v):
+        return v / 7.0 if v else 0.0
+
+    result = {}
+    for key in ("revenue", "expenses", "net", "attendance_total"):
+        result[key] = {
+            "yesterday":    _badge(key, today, yesterday),
+            "same_weekday": _badge(key, today, same_wd),
+            "week_avg": {
+                "pct": _pct(
+                    today.get(key, 0) or 0,
+                    _avg(week_summary.get(key, 0)),
+                ),
+                "absolute": (today.get(key, 0) or 0) - _avg(week_summary.get(key, 0)),
+            },
+        }
+    return result
+
+
+def daily_reconciliation(d: date) -> dict:
+    """
+    Small "does this add up?" summary for the receptionist and the manager.
+
+    Keys:
+        payments_count        — how many payments were recorded
+        unique_payers         — distinct player_id in payments
+        attendance_count      — allowed attendance rows
+        cash_in               — sum of cash-method payments
+        transfer_in           — sum of transfer-method payments
+        other_in              — sum of other-method payments
+        revenue_total         — total of all payments
+    """
+    iso = d.isoformat()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt,
+                   COUNT(DISTINCT player_id) AS unique_payers,
+                   COALESCE(SUM(amount), 0) AS total,
+                   COALESCE(SUM(CASE WHEN method='cash' THEN amount ELSE 0 END), 0) AS cash_in,
+                   COALESCE(SUM(CASE WHEN method='transfer' THEN amount ELSE 0 END), 0) AS transfer_in,
+                   COALESCE(SUM(CASE WHEN method NOT IN ('cash','transfer') THEN amount ELSE 0 END), 0) AS other_in
+            FROM payments
+            WHERE payment_date = ?
+            """,
+            (iso,),
+        ).fetchone()
+
+        att_row = conn.execute(
+            """
+            SELECT COUNT(*) FROM attendance_log
+            WHERE substr(scan_datetime, 1, 10) = ?
+              AND result = 'allowed'
+            """,
+            (iso,),
+        ).fetchone()
+
+        return {
+            "payments_count":   int(row["cnt"]) if row else 0,
+            "unique_payers":    int(row["unique_payers"]) if row else 0,
+            "revenue_total":    float(row["total"]) if row else 0.0,
+            "cash_in":          float(row["cash_in"]) if row else 0.0,
+            "transfer_in":      float(row["transfer_in"]) if row else 0.0,
+            "other_in":         float(row["other_in"]) if row else 0.0,
+            "attendance_count": int(att_row[0]) if att_row else 0,
+        }
+    finally:
+        conn.close()
+
+
+def payments_for_day_detailed(d: date,
+                              sport_id: int = None,
+                              method: str = None) -> list[dict]:
+    """
+    Return detailed payment rows for a day, optionally filtered by
+    sport and payment method. Fields include the ones the new table
+    needs to show: time, player, sport, amount, method, note, recorded_by.
+    """
+    iso = d.isoformat()
+    conn = get_connection()
+    try:
+        clauses = ["p.payment_date = ?"]
+        params = [iso]
+
+        if sport_id is not None:
+            clauses.append("s.activity_id = ?")
+            params.append(sport_id)
+
+        if method is not None:
+            clauses.append("p.method = ?")
+            params.append(method)
+
+        where = " AND ".join(clauses)
+
+        rows = conn.execute(
+            f"""
+            SELECT p.payment_id,
+                   p.amount, p.currency, p.method, p.payment_date,
+                   p.notes, p.recorded_by, p.created_at,
+                   pl.full_name AS player_name, pl.player_id,
+                   s.subscription_id, s.activity_id,
+                   act.name_en AS activity_name_en,
+                   act.name_ar AS activity_name_ar
+            FROM payments p
+            JOIN players pl ON pl.player_id = p.player_id
+            LEFT JOIN subscriptions s ON s.subscription_id = p.subscription_id
+            LEFT JOIN activities act ON act.activity_id = s.activity_id
+            WHERE {where}
+            ORDER BY p.payment_id DESC
+            """,
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()

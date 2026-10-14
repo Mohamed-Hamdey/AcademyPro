@@ -24,11 +24,13 @@ import sys
 from PyQt6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
+
+from ui.i18n import t
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from ui.design import SPACING, RADIUS, TYPOGRAPHY
-from ui.theme import theme, make_danger, make_secondary, make_ghost
+from ui.theme import ThemedWidget, theme, make_danger, make_secondary, make_ghost
 
 
 # ===========================================================================
@@ -385,3 +387,362 @@ def hairline(parent=None) -> QFrame:
     _restyle()
     theme().on_change(lambda _m: _restyle())
     return line
+
+# ===========================================================================
+# BarList — horizontal bars with labels and values
+# ===========================================================================
+
+class BarList(QWidget, ThemedWidget):
+    """
+    A vertical stack of horizontal bars. Each row shows:
+        label                        1,650 EGP · 69% (2)
+        ████████████░░░░░░░░░        XX%
+
+    Data shape: list of dicts with keys:
+        - label       (str)
+        - value       (float)
+        - count       (int, optional)
+        - suffix      (str, optional)
+        - color       (str, optional)
+
+    Rows are sorted by value descending before rendering.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rows = []
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(SPACING["sm"])
+        self._init_theme()
+
+    def set_data(self, rows: list):
+        self._rows = sorted(rows, key=lambda r: r.get("value", 0), reverse=True)
+        self._render()
+
+    def restyle(self):
+        self._render()
+
+    # ---------- internal ----------
+
+    def _clear(self):
+        """Remove every child widget immediately, not on the next tick."""
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        # Belt-and-braces: any widget still parented to self that isn't
+        # in the layout (shouldn't happen, but Qt is Qt).
+        for child in self.findChildren(QWidget):
+            child.setParent(None)
+            child.deleteLater()
+
+    def _render(self):
+        # 1. Always clear first — no matter how we got here.
+        self._clear()
+
+        # 2. Empty state
+        if not self._rows:
+            tm = theme()
+            lbl = QLabel(t("dash.no_data"))
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(
+                f"QLabel {{"
+                f"  color: {tm.color('text_secondary')};"
+                f"  background-color: transparent;"
+                f"  font-style: italic;"
+                f"  padding: 24px 8px;"
+                f"}}"
+            )
+            self._layout.addWidget(lbl)
+            return
+
+        # 3. Draw rows
+        tm = theme()
+        total = sum(r["value"] for r in self._rows) or 1.0
+
+        for i, r in enumerate(self._rows):
+            row = QWidget()
+            v = QVBoxLayout(row)
+            v.setContentsMargins(0, 0, 0, 0)
+            v.setSpacing(4)
+
+            top = QHBoxLayout()
+            top.setContentsMargins(0, 0, 0, 0)
+            top.setSpacing(8)
+
+            label = QLabel(r["label"])
+            label.setStyleSheet(
+                f"QLabel {{"
+                f"  color: {tm.color('text')};"
+                f"  background-color: transparent;"
+                f"  font-size: 13px;"
+                f"  font-weight: 600;"
+                f"}}"
+            )
+            top.addWidget(label)
+            top.addStretch()
+
+            suffix = r.get("suffix", "")
+            value_text = f"{r['value']:,.0f}{suffix}"
+            pct = (r["value"] / total) * 100
+            pct_text = f"{pct:.0f}%"
+            extra_bits = [pct_text]
+            if r.get("count") is not None:
+                extra_bits.append(f"({r['count']})")
+            value_full = f"{value_text}  ·  " + "  ".join(extra_bits)
+
+            value_lbl = QLabel(value_full)
+            value_lbl.setStyleSheet(
+                f"QLabel {{"
+                f"  color: {tm.color('text_secondary')};"
+                f"  background-color: transparent;"
+                f"  font-size: 12px;"
+                f"  font-weight: 600;"
+                f"}}"
+            )
+            top.addWidget(value_lbl)
+            v.addLayout(top)
+
+            bar_bg = QFrame()
+            bar_bg.setFixedHeight(8)
+            bar_bg.setStyleSheet(
+                f"QFrame {{"
+                f"  background-color: {tm.color('surface_alt')};"
+                f"  border-radius: 4px;"
+                f"}}"
+            )
+            bar_bg_layout = QHBoxLayout(bar_bg)
+            bar_bg_layout.setContentsMargins(0, 0, 0, 0)
+            bar_bg_layout.setSpacing(0)
+
+            fill_pct = max(0.02, r["value"] / total)
+            fill = QFrame()
+            fill.setStyleSheet(
+                f"QFrame {{"
+                f"  background-color: {tm.color(r.get('color', 'primary'))};"
+                f"  border-radius: 4px;"
+                f"}}"
+            )
+            fill.setMinimumWidth(4)
+
+            stretch_fill = int(fill_pct * 1000)
+            stretch_rest = int((1 - fill_pct) * 1000)
+            bar_bg_layout.addWidget(fill, stretch=stretch_fill)
+            if stretch_rest > 0:
+                bar_bg_layout.addStretch(stretch_rest)
+
+            v.addWidget(bar_bg)
+            self._layout.addWidget(row)
+
+
+# ===========================================================================
+# MiniBarChart — simple bar chart for daily values over a window
+# ===========================================================================
+
+# ===========================================================================
+# MiniBarChart — simple bar chart for daily values over a window
+# ===========================================================================
+
+# ===========================================================================
+# ComboBarChart — grouped bars + optional net line
+# ===========================================================================
+
+class ComboBarChart(QWidget, ThemedWidget):
+    """
+    A compact bar chart with:
+      - 1 or 2 grouped bar series per x-slot (e.g. revenue + expenses)
+      - Highlighted slot (the currently-selected day)
+      - Click handler that emits the slot's `key`
+
+    Data shape:
+        slots = [
+            {
+                "label":     str,           # short x-axis label
+                "key":       any,           # returned on click
+                "values":    [float, ...],  # one value per series, in order
+                "highlight": bool,          # draw emphasized
+            },
+            ...
+        ]
+    """
+
+    slotClicked = pyqtSignal(object)
+
+    def __init__(self, height: int = 130, series_labels=None,
+                 series_colors=None, show_net_line: bool = False,
+                 parent=None):
+        super().__init__(parent)
+        self._height = height
+        self._series_labels = series_labels or []
+        self._series_colors = series_colors or ["primary", "border"]
+        self._show_net_line = show_net_line
+        self._slots = []
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 8, 0, 0)
+        self._layout.setSpacing(SPACING["sm"])
+        self.setMinimumHeight(height + 42)
+        self._init_theme()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_data(self, slots: list):
+        """Replace the chart contents. Always clears first via _render()."""
+        self._slots = list(slots)
+        self._render()
+
+    def restyle(self):
+        """Called automatically on theme change."""
+        self._render()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _clear(self):
+        """
+        Remove every child widget from the layout AND from this widget's
+        ownership, immediately. This is the only reliable way to prevent
+        Qt from showing duplicated content across multiple _render() calls.
+        """
+        # Take every item out of the layout and unparent it.
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
+        # Belt-and-braces: any widget still parented to self but not in the
+        # layout (rare, but Qt sometimes leaves these behind).
+        for child in self.findChildren(QWidget):
+            child.setParent(None)
+            child.deleteLater()
+
+    def _render(self):
+        # 1. Clear first — ALWAYS. This is what prevents duplication.
+        self._clear()
+
+        # 2. Empty case: show a dash.
+        if not self._slots:
+            tm = theme()
+            lbl = QLabel("—")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(
+                f"QLabel {{"
+                f"  color: {tm.color('text_secondary')};"
+                f"  background-color: transparent;"
+                f"  font-size: 12px;"
+                f"}}"
+            )
+            self._layout.addWidget(lbl)
+            return
+
+        # 3. Compute shared max across all series for a consistent scale.
+        max_val = 0.0
+        for s in self._slots:
+            for v in s.get("values", []):
+                if v and v > max_val:
+                    max_val = v
+        all_zero = (max_val == 0)
+
+        tm = theme()
+
+        # 4. Draw one slot column per data point.
+        for s in self._slots:
+            col = QWidget()
+            col.setCursor(Qt.CursorShape.PointingHandCursor)
+            col.setSizePolicy(
+                col.sizePolicy().horizontalPolicy(),
+                col.sizePolicy().verticalPolicy().Preferred,
+            )
+
+            v = QVBoxLayout(col)
+            v.setContentsMargins(0, 0, 0, 0)
+            v.setSpacing(2)
+
+            # ---- value row (above bars) ----
+            values = s.get("values", [])
+            if values and not all_zero:
+                shown = [f"{x:,.0f}" for x in values if x]
+                top_text = " · ".join(shown)
+            else:
+                top_text = ""
+            top = QLabel(top_text)
+            top.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            top.setStyleSheet(
+                f"QLabel {{"
+                f"  color: {tm.color('text_secondary')};"
+                f"  background-color: transparent;"
+                f"  font-size: 10px;"
+                f"  font-weight: 600;"
+                f"}}"
+            )
+            v.addWidget(top)
+
+            # ---- bar area (fixed height, bars sit on the baseline) ----
+            bar_area = QWidget()
+            bar_area.setFixedHeight(self._height)
+            ba = QHBoxLayout(bar_area)
+            ba.setContentsMargins(0, 0, 0, 0)
+            ba.setSpacing(0)
+            ba.addStretch()
+
+            # inner column: stretch pushes the bar group down to the bottom
+            bar_col = QVBoxLayout()
+            bar_col.setContentsMargins(0, 0, 0, 0)
+            bar_col.setSpacing(0)
+            bar_col.addStretch()
+
+            bars_row = QHBoxLayout()
+            bars_row.setContentsMargins(0, 0, 0, 0)
+            bars_row.setSpacing(2)
+
+            for i, val in enumerate(values):
+                bar = QFrame()
+                if all_zero or not val:
+                    bar_px = 2
+                else:
+                    bar_px = max(4, int((val / max_val) * (self._height - 6)))
+                bar.setFixedHeight(bar_px)
+                bar.setFixedWidth(14)
+                color_token = self._series_colors[i % len(self._series_colors)]
+                bar.setStyleSheet(
+                    f"QFrame {{"
+                    f"  background-color: {tm.color(color_token)};"
+                    f"  border-radius: 2px;"
+                    f"}}"
+                )
+                bars_row.addWidget(bar)
+
+            bar_col.addLayout(bars_row)
+            ba.addLayout(bar_col)
+            ba.addStretch()
+
+            v.addWidget(bar_area)
+
+            # ---- x-axis label (below bars) ----
+            x_label = QLabel(s.get("label", ""))
+            x_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            x_label.setStyleSheet(
+                f"QLabel {{"
+                f"  color: {tm.color('text_secondary')};"
+                f"  background-color: transparent;"
+                f"  font-size: 11px;"
+                f"}}"
+            )
+            v.addWidget(x_label)
+
+            # ---- click handler ----
+            key = s.get("key")
+            def _make_handler(k):
+                def _handler(event):
+                    self.slotClicked.emit(k)
+                return _handler
+            col.mousePressEvent = _make_handler(key)
+
+            self._layout.addWidget(col)

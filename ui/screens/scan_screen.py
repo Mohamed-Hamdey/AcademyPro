@@ -1,52 +1,48 @@
 """
-Receptionist scan screen — v4 with activity selector.
+Receptionist scan screen — v4 with activity selector and live recent panel.
 
-Layout:
-    ┌──────────────────────────────────────────────────────────┐
-    │  [Session: Auto ▾] [● Camera off] [▶ Start] [■ Stop]     │
-    │                                                          │
-    │  ┌─ Camera ────────────────────┐  ┌─ Recent ──────────┐  │
-    │  │  [preview]                  │  │ ✓ 09:12  أحمد     │  │
-    │  └─────────────────────────────┘  └───────────────────┘  │
-    │                                                          │
-    │  ┌─ Manual check-in ─────────────────────────────────┐   │
-    │  │  [search]                          [Search]        │   │
-    │  └────────────────────────────────────────────────────┘   │
-    └──────────────────────────────────────────────────────────┘
-
-The "Session" selector at the top lets the receptionist choose which
-activity is being scanned. Default is "Auto" (فقط حدد حسب بيانات اللاعب).
-Specific selection forces only that activity's subs to be considered.
+Recent Check-ins card:
+  * Auto-refreshes every 5 s while this screen is visible
+  * Shows only today's entries
+  * Rich rows: status icon, time, name, activity, reason/override
+  * Double-click → opens the player's detail screen
+  * Right-click → context menu (Open player, Undo check-in)
+  * Filter row: result, activity, name search
+  * Footer button → jump to the Audit log
 """
 
 from datetime import date
 import os
 import sys
+from ui.formatting import format_attendance_row, is_ar
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QListWidget, QListWidgetItem, QStackedWidget, QComboBox,
+    QMenu,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QImage, QPixmap, QColor
+from PyQt6.QtCore import Qt, QTimer, QPoint
+from PyQt6.QtGui import QImage, QPixmap, QColor, QAction
 
 from ui.message_box import warn
+from ui.formatting import format_attendance_row
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_academy_name
-from repositories import players_repo
+from repositories import players_repo, attendance_repo
 from services import attendance_service, subscription_service, activity_service
 from services.checkin_service import perform_check_in
 from logic.qr_utils import decode_qr_from_frame
 from ui.cards.player_card import PlayerCardWidget
 from ui.components import SectionCard, Toolbar, Pill
-from ui.theme import theme, make_danger, ThemedWidget
+from ui.theme import theme, make_danger, make_secondary, ThemedWidget
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
 CARD_DISPLAY_MS = 2500
-AUTO_ACTIVITY = -1     # sentinel for "Auto" in the selector
+REFRESH_INTERVAL_MS = 5000     # recent check-ins auto-refresh
+AUTO_ACTIVITY = -1             # sentinel for "Auto" in the session selector
 
 
 class ScanScreen(ThemedWidget, QWidget):
@@ -56,9 +52,28 @@ class ScanScreen(ThemedWidget, QWidget):
         self._camera_timer = QTimer(self)
         self._camera_timer.timeout.connect(self._poll_camera)
         self._awaiting_clear = False
+
+        # Auto-refresh timer for the recent panel
+        self._recent_timer = QTimer(self)
+        self._recent_timer.timeout.connect(self._refresh_recent_checkins)
+        self._recent_timer.setInterval(REFRESH_INTERVAL_MS)
+
+        self._recent_rows = []       # cached rows for context-menu lookups
+
         self._build_ui()
         self._refresh_recent_checkins()
         self._init_theme()
+
+    # ---------- show/hide handling for the refresh timer ----------
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._recent_timer.start()
+        self._refresh_recent_checkins()
+
+    def hideEvent(self, event):
+        self._recent_timer.stop()
+        super().hideEvent(event)
 
     # ---------- construction ----------
 
@@ -67,17 +82,15 @@ class ScanScreen(ThemedWidget, QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        # ---- Toolbar: session selector + camera controls ----
+        # Toolbar: session selector + camera controls
         self.toolbar = Toolbar()
 
-        # Session selector
         self.session_label = QLabel(t("checkin.session.label"))
         self.session_input = QComboBox()
         self.session_input.setMinimumWidth(200)
         self._reload_activities()
         self.session_input.currentIndexChanged.connect(self._on_session_changed)
 
-        # Camera status + controls
         self.camera_status_pill = Pill(t("checkin.status.camera_off"), "neutral")
         self.start_scan_button = QPushButton(t("checkin.btn.start_scan"))
         self.stop_scan_button = QPushButton(t("checkin.btn.stop_scan"))
@@ -95,7 +108,7 @@ class ScanScreen(ThemedWidget, QWidget):
 
         root.addWidget(self.toolbar)
 
-        # ---- Main row: camera card + recent card ----
+        # Main row: camera card + recent card
         main_row = QHBoxLayout()
         main_row.setSpacing(SPACING["lg"])
 
@@ -104,7 +117,6 @@ class ScanScreen(ThemedWidget, QWidget):
         self.stack = QStackedWidget()
         self.camera_card.body.addWidget(self.stack)
 
-        # Idle page
         idle = QWidget()
         idle_layout = QVBoxLayout(idle)
         idle_layout.setContentsMargins(0, 0, 0, 0)
@@ -121,7 +133,6 @@ class ScanScreen(ThemedWidget, QWidget):
 
         self.stack.addWidget(idle)
 
-        # Result page
         result = QWidget()
         result_layout = QVBoxLayout(result)
         result_layout.setContentsMargins(0, 0, 0, 0)
@@ -134,14 +145,76 @@ class ScanScreen(ThemedWidget, QWidget):
         self.stack.setCurrentIndex(0)
         main_row.addWidget(self.camera_card, stretch=3)
 
-        # Recent card
-        self.recent_card = SectionCard(title=t("checkin.card.recent"))
+        # --- Recent check-ins card ---
+        self.recent_card = SectionCard(title=t("checkin.recent.title"))
+
+        # Filter row
+        filters = QHBoxLayout()
+        filters.setSpacing(SPACING["sm"])
+
+        self.result_filter = QComboBox()
+        self.result_filter.addItem(t("checkin.recent.filter.all"), None)
+        self.result_filter.addItem(t("checkin.recent.filter.allowed"), "allowed")
+        self.result_filter.addItem(t("checkin.recent.filter.denied"), "denied")
+        self.result_filter.addItem(t("checkin.recent.filter.override"), "override")
+        self.result_filter.currentIndexChanged.connect(self._render_recent)
+
+        self.activity_filter = QComboBox()
+        self.activity_filter.addItem(t("checkin.recent.filter.all_activities"), None)
+        for act in activity_service.list_active():
+            name = (act.name_ar if is_ar() else act.name_en)
+            self.activity_filter.addItem(name, act.activity_id)
+        self.activity_filter.currentIndexChanged.connect(self._render_recent)
+
+        self.name_search = QLineEdit()
+        self.name_search.setPlaceholderText(t("checkin.recent.search_placeholder"))
+        self.name_search.textChanged.connect(self._render_recent)
+
+        filters.addWidget(self.result_filter)
+        filters.addWidget(self.activity_filter)
+        filters.addWidget(self.name_search, stretch=1)
+        self.recent_card.body.addLayout(filters)
+
+        # List
         self.recent_list = QListWidget()
         self.recent_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.recent_list.setFrameShape(QListWidget.Shape.NoFrame)
+        self.recent_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.recent_list.customContextMenuRequested.connect(
+            self._on_recent_context_menu
+        )
+        self.recent_list.itemDoubleClicked.connect(
+            self._on_recent_item_double_clicked
+        )
+        self.recent_list.setMinimumHeight(280)
         self.recent_card.body.addWidget(self.recent_list)
-        main_row.addWidget(self.recent_card, stretch=2)
 
+        # Empty-state label (hidden when there are rows)
+        self.recent_empty = QLabel(t("checkin.recent.empty"))
+        self.recent_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.recent_empty.setWordWrap(True)
+        self.recent_empty.hide()
+        self.recent_card.body.addWidget(self.recent_empty)
+
+        # Footer
+        footer = QHBoxLayout()
+        footer.setSpacing(SPACING["sm"])
+
+        self.auto_refresh_hint = QLabel(t("checkin.recent.auto_refresh"))
+        self.auto_refresh_hint.setStyleSheet("font-size: 11px;")
+        footer.addWidget(self.auto_refresh_hint)
+        footer.addStretch()
+
+        self.open_full_button = QPushButton(t("checkin.recent.open_full"))
+        make_secondary(self.open_full_button)
+        self.open_full_button.clicked.connect(self._on_open_full_log)
+        footer.addWidget(self.open_full_button)
+
+        self.recent_card.body.addLayout(footer)
+
+        main_row.addWidget(self.recent_card, stretch=2)
         root.addLayout(main_row, stretch=1)
 
         # Manual check-in card
@@ -149,16 +222,18 @@ class ScanScreen(ThemedWidget, QWidget):
         search_row = QHBoxLayout()
         search_row.setSpacing(SPACING["sm"])
 
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(t("checkin.search.placeholder"))
-        self.search_input.setProperty("cssClass", "search")
-        self.search_input.returnPressed.connect(self._on_manual_search)
+        self.manual_search_input = QLineEdit()
+        self.manual_search_input.setPlaceholderText(
+            t("checkin.search.placeholder")
+        )
+        self.manual_search_input.setProperty("cssClass", "search")
+        self.manual_search_input.returnPressed.connect(self._on_manual_search)
 
-        self.search_button = QPushButton(t("checkin.search.button"))
-        self.search_button.clicked.connect(self._on_manual_search)
+        self.manual_search_button = QPushButton(t("checkin.search.button"))
+        self.manual_search_button.clicked.connect(self._on_manual_search)
 
-        search_row.addWidget(self.search_input, stretch=1)
-        search_row.addWidget(self.search_button)
+        search_row.addWidget(self.manual_search_input, stretch=1)
+        search_row.addWidget(self.manual_search_button)
         self.search_card.body.addLayout(search_row)
 
         self.results_list = QListWidget()
@@ -170,28 +245,22 @@ class ScanScreen(ThemedWidget, QWidget):
         root.addWidget(self.search_card)
 
     def _reload_activities(self):
-        """Fill the session selector with Auto + each active activity."""
         self.session_input.blockSignals(True)
         self.session_input.clear()
         self.session_input.addItem(t("checkin.session.auto"), AUTO_ACTIVITY)
-
         for act in activity_service.list_active():
             display = f"{act.name_en} · {act.name_ar}" if act.name_en != act.name_ar else act.name_en
             self.session_input.addItem(display, act.activity_id)
-
-        # Default: Auto (row 0). Every fresh launch starts on Auto.
         self.session_input.setCurrentIndex(0)
         self.session_input.blockSignals(False)
 
     def _current_activity_id(self):
-        """The activity_id the session is set to, or None for Auto."""
         val = self.session_input.currentData()
         if val is None or val == AUTO_ACTIVITY:
             return None
         return val
 
     def _on_session_changed(self, _index):
-        # No action needed yet — the value is read at scan time.
         pass
 
     # ---------- theming ----------
@@ -200,20 +269,13 @@ class ScanScreen(ThemedWidget, QWidget):
         tm = theme()
 
         self.session_label.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {tm.color('text_secondary')};"
-            f"  background-color: transparent;"
-            f"  font-size: 13px;"
-            f"  font-weight: 600;"
-            f"  padding-right: 6px;"
-            f"}}"
+            f"QLabel {{ color: {tm.color('text_secondary')};"
+            f" background-color: transparent; font-size: 13px;"
+            f" font-weight: 600; padding-right: 6px; }}"
         )
         self.camera_hint.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {tm.color('text_secondary')};"
-            f"  background-color: transparent;"
-            f"  font-size: 12px;"
-            f"}}"
+            f"QLabel {{ color: {tm.color('text_secondary')};"
+            f" background-color: transparent; font-size: 12px; }}"
         )
         self.camera_label.setStyleSheet(
             f"QLabel {{"
@@ -224,6 +286,22 @@ class ScanScreen(ThemedWidget, QWidget):
             f"  border: 1px dashed {tm.color('border')};"
             f"}}"
         )
+        self.recent_empty.setStyleSheet(
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-style: italic;"
+            f"  padding: 24px;"
+            f"  font-size: 13px;"
+            f"}}"
+        )
+        self.auto_refresh_hint.setStyleSheet(
+            f"QLabel {{"
+            f"  color: {tm.color('text_secondary')};"
+            f"  background-color: transparent;"
+            f"  font-size: 11px;"
+            f"}}"
+        )
         self.recent_list.setStyleSheet(
             f"QListWidget {{"
             f"  background-color: transparent;"
@@ -232,19 +310,22 @@ class ScanScreen(ThemedWidget, QWidget):
             f"  outline: none;"
             f"}}"
             f"QListWidget::item {{"
-            f"  padding: 10px 12px;"
-            f"  border-radius: {RADIUS['sm']}px;"
+            f"  padding: 8px 10px;"
+            f"  border-radius: {RADIUS['xs']}px;"
             f"  color: {tm.color('text')};"
             f"}}"
             f"QListWidget::item:hover {{"
             f"  background-color: {tm.color('surface_alt')};"
+            f"}}"
+            f"QListWidget::item:selected {{"
+            f"  background-color: {tm.color('primary_soft')};"
             f"}}"
         )
         self.results_list.setStyleSheet(
             f"QListWidget {{"
             f"  background-color: {tm.color('surface')};"
             f"  border: 1px solid {tm.color('border')};"
-            f"  border-radius: {RADIUS['sm']}px;"
+            f"  border-radius: {tm.color('border')} 0;"
             f"  padding: 4px;"
             f"  outline: none;"
             f"}}"
@@ -316,33 +397,185 @@ class ScanScreen(ThemedWidget, QWidget):
             )
         )
 
-    # ---------- recent check-ins ----------
+    # ---------- recent check-ins (rich, auto-refresh, filters) ----------
 
     def _refresh_recent_checkins(self):
+        try:
+            rows = attendance_repo.get_today_with_details(limit=100)
+        except Exception as e:
+            print(f"[scan_screen] recent query failed: {e}")
+            rows = []
+        self._recent_rows = rows
+        self._render_recent()
+
+    def _render_recent(self):
+        # Pull the current filter values
+        result_filter = self.result_filter.currentData()
+        activity_filter = self.activity_filter.currentData()
+        name_query = self.name_search.text().strip().lower()
+
+        filtered = []
+        for r in self._recent_rows:
+            # Result filter
+            if result_filter == "allowed":
+                if r["result"] != "allowed" or r["was_override"]:
+                    continue
+            elif result_filter == "denied":
+                if r["result"] != "denied":
+                    continue
+            elif result_filter == "override":
+                if not r["was_override"]:
+                    continue
+
+            # Activity filter
+            if activity_filter is not None and r["activity_id"] != activity_filter:
+                continue
+
+            # Name search
+            if name_query and name_query not in (r["player_name"] or "").lower():
+                continue
+
+            filtered.append(r)
+
         self.recent_list.clear()
-        entries = attendance_service.get_recent_with_names(limit=10)
-        if not entries:
-            placeholder = QListWidgetItem(t("checkin.recent.empty"))
-            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
-            placeholder.setForeground(QColor(theme().color("text_secondary")))
-            self.recent_list.addItem(placeholder)
-            return
         tm = theme()
-        for e in entries:
-            time_part = e["scan_datetime"].split(" ")[-1][:5]
-            if e["result"] == "allowed":
-                dot = "✓" if not e["was_override"] else "✓*"
-            else:
-                dot = "✕"
-            text = f"{dot}   {time_part}   {e['full_name']}"
+
+        if not filtered:
+            self.recent_list.hide()
+            self.recent_empty.show()
+            return
+
+        self.recent_list.show()
+        self.recent_empty.hide()
+
+        for r in filtered:
+            text = format_attendance_row(r)
             item = QListWidgetItem(text)
-            item.setForeground(QColor(tm.color("text")))
+            item.setData(Qt.ItemDataRole.UserRole, r)
+            # Color: denied = danger, override = warning, else text
+            if r["result"] == "denied":
+                item.setForeground(QColor(tm.color("danger")))
+            elif r["was_override"]:
+                item.setForeground(QColor(tm.color("warning")))
+            else:
+                item.setForeground(QColor(tm.color("text")))
             self.recent_list.addItem(item)
 
-    # ---------- manual search ----------
+
+    # ---------- context menu ----------
+
+    def _on_recent_context_menu(self, pos: QPoint):
+        item = self.recent_list.itemAt(pos)
+        if item is None:
+            return
+        row = item.data(Qt.ItemDataRole.UserRole)
+        if not row:
+            return
+
+        menu = QMenu(self)
+
+        open_action = QAction(t("checkin.recent.menu.open"), self)
+        open_action.triggered.connect(lambda: self._open_player(row["player_id"]))
+        menu.addAction(open_action)
+
+        # Undo — only for allowed entries that haven't been overridden and
+        # are from today
+        can_undo = (
+            row["result"] == "allowed"
+            and row.get("subscription_id") is not None
+        )
+        undo_action = QAction(t("checkin.recent.menu.undo"), self)
+        undo_action.setEnabled(can_undo)
+        undo_action.triggered.connect(lambda: self._undo_recent(row))
+        menu.addAction(undo_action)
+
+        menu.exec(self.recent_list.mapToGlobal(pos))
+
+    def _undo_recent(self, row: dict):
+        log_id = row.get("log_id")
+        if log_id is None:
+            return
+        # Confirm before undoing
+        ok = warn if False else None
+        # Actually we want an ask()-style confirm. Import here to avoid
+        # circulars at module load.
+        from ui.message_box import ask
+        if not ask(
+            self,
+            t("checkin.recent.confirm_undo_title"),
+            t("checkin.recent.confirm_undo_msg", name=row.get("player_name") or ""),
+        ):
+            return
+        try:
+            from services import attendance_service
+            success = attendance_service.undo_check_in(log_id, date.today())
+        except Exception:
+            success = False
+
+        if success:
+            # Audit
+            try:
+                from services import audit_service
+                audit_service.attendance_undone(
+                    log_id=log_id, player_id=row["player_id"]
+                )
+            except Exception:
+                pass
+            self._refresh_recent_checkins()
+        else:
+            warn(
+                self,
+                t("checkin.recent.undo_failed_title"),
+                t("checkin.recent.undo_failed_msg"),
+            )
+
+    # ---------- recent click handlers ----------
+
+    def _on_recent_item_double_clicked(self, item: QListWidgetItem):
+        row = item.data(Qt.ItemDataRole.UserRole)
+        if not row:
+            return
+        self._open_player(row["player_id"])
+
+    def _open_player(self, player_id: int):
+        """Route to Manage Players → open this player's detail."""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is None:
+                return
+            w = self
+            main_win = None
+            while w is not None:
+                if hasattr(w, "_pages_by_nav_key") and hasattr(w, "sidebar"):
+                    main_win = w
+                    break
+                w = w.parentWidget() if hasattr(w, "parentWidget") else None
+            if main_win is None:
+                return
+            nav_keys = getattr(main_win, "_nav_keys_in_order", [])
+            if "nav.manage_players" in nav_keys:
+                idx = nav_keys.index("nav.manage_players")
+                main_win.sidebar.set_current_row(idx)
+            screen = main_win._pages_by_nav_key.get("nav.manage_players")
+            if screen is not None and hasattr(screen, "_open_detail"):
+                screen._open_detail(player_id)
+        except Exception as e:
+            print(f"[scan_screen] failed to open player {player_id}: {e}")
+
+    def _on_open_full_log(self):
+        """Open the full attendance-log dialog (works for all roles)."""
+        from ui.dialogs.today_log_dialog import TodayLogDialog
+        dlg = TodayLogDialog(parent=self)
+        dlg.exec()
+        # In case the user undid something from inside the dialog,
+        # keep the inline Recent panel in sync.
+        self._refresh_recent_checkins()
+
+    # ---------- manual search (unchanged behavior) ----------
 
     def _on_manual_search(self):
-        query = self.search_input.text().strip()
+        query = self.manual_search_input.text().strip()
         if not query:
             return
         self.results_list.clear()
@@ -375,7 +608,7 @@ class ScanScreen(ThemedWidget, QWidget):
         if player_id is None:
             return
         self.results_list.hide()
-        self.search_input.clear()
+        self.manual_search_input.clear()
         self.handle_player_id(player_id)
 
     # ---------- pipeline ----------
@@ -396,7 +629,6 @@ class ScanScreen(ThemedWidget, QWidget):
             )
             return
 
-        # Duplicate
         if getattr(outcome, "was_duplicate", False):
             warn(
                 self,
@@ -405,7 +637,6 @@ class ScanScreen(ThemedWidget, QWidget):
             )
             return
 
-        # Not enrolled in selected activity
         if getattr(outcome, "not_enrolled_in_activity", False):
             warn(
                 self,
@@ -416,7 +647,6 @@ class ScanScreen(ThemedWidget, QWidget):
             )
             return
 
-        # Multiple valid subs + Auto mode → picker popup
         if getattr(outcome, "needs_picker", False):
             from ui.dialogs.activity_picker_dialog import ActivityPickerDialog
             picker = ActivityPickerDialog(
@@ -449,3 +679,9 @@ class ScanScreen(ThemedWidget, QWidget):
         self.player_card.clear()
         self.stack.setCurrentIndex(0)
         self._awaiting_clear = False
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
