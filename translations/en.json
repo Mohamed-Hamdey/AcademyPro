@@ -454,6 +454,41 @@
     "detail.tab.records": "Records & Activity",
       "progress.kpi.denials": "Denials",
   "history.report.total_paid": "Total paid",
+    "progress.kpi.total_sub_with_paid": "Since joining ({start}) · Total paid {paid} EGP",
+  "history.payment.recorded": "Payment {amount} ({method})",
+    "nav.dashboard": "Dashboard",
+  "dash.title": "Dashboard",
+  "dash.today": "Today",
+  "dash.prev_day": "Previous",
+  "dash.next_day": "Next",
+  "dash.jump_today": "Today",
+
+  "dash.kpi.revenue": "Revenue",
+  "dash.kpi.revenue_sub": "{count} payment(s)",
+  "dash.kpi.expenses": "Expenses",
+  "dash.kpi.expenses_sub": "{count} expense(s)",
+  "dash.kpi.net": "Net for the day",
+  "dash.kpi.net_sub": "Revenue − expenses",
+  "dash.kpi.attendance": "Attendance",
+  "dash.kpi.attendance_sub": "Check-ins recorded today",
+
+  "dash.by_activity": "Attendance by activity",
+  "dash.by_activity_empty": "No attendance recorded for this day.",
+  "dash.total": "Total",
+
+  "dash.payments": "Today's payments",
+  "dash.payments_empty": "No payments recorded for this day.",
+
+  "dash.signups": "Today's signups",
+  "dash.signups_empty": "No signups for this day.",
+
+  "dash.alerts": "Alerts",
+  "dash.alerts_empty": "No alerts.",
+  "dash.alert.low_sessions": "\"{name}\" has {count} session(s) left ({activity})",
+  "dash.alert.expiring_soon": "\"{name}\"'s subscription expires on {date} ({activity})",
+
+  "dash.print_day": "🖨 Print day",
+  "dash.close_day": "✓ Close day",
   "checkin.not_enrolled.msg": "Player \"{name}\" is not enrolled in \"{activity}\". Change the session or pick the correct activity.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

@@ -10,6 +10,7 @@ stays logged out until they authenticate again.
 
 import os
 import sys
+from ui.screens.dashboard_screen import DashboardScreen
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QDialog,
@@ -76,8 +77,9 @@ class MainWindow(QMainWindow):
 
         # Register pages (only those the user has permission for).
         # Order here determines sidebar order.
-        self._register_page("nav.check_in",       "checkin.title", ScanScreen(),       "checkin")
-        self._register_page("nav.manage_players", "players.title", PlayerListScreen(), "players.view")
+        self._register_page("nav.check_in",       "checkin.title",   ScanScreen(),        "checkin")
+        self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(),   "financials.view")
+        self._register_page("nav.manage_players", "players.title",   PlayerListScreen(),  "players.view")
         self._register_page("nav.activities", "activities.title", ActivitiesScreen(), "activities.manage")
         self._register_page("nav.users",          "users.title",   UsersScreen(),     "users.manage")
         self._register_page("nav.audit",          "audit.title",   AuditScreen(),     "audit.view")
@@ -121,11 +123,11 @@ class MainWindow(QMainWindow):
     def _glyph_for(nav_key: str) -> str:
         return {
             "nav.check_in":       "▶",
+            "nav.dashboard":      "📊",
             "nav.manage_players": "▤",
             "nav.users":          "👥",
             "nav.activities":     "🏃",
             "nav.audit":          "🗒",
-
         }.get(nav_key, "•")
 
     def _on_nav_changed(self, index: int):

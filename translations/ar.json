@@ -449,6 +449,41 @@
     "detail.tab.records": "السجل",
       "progress.kpi.denials": "مرات الرفض",
   "history.report.total_paid": "إجمالي المدفوعات",
+    "progress.kpi.total_sub_with_paid": "منذ الانضمام ({start}) · إجمالي المدفوعات {paid} EGP",
+  "history.payment.recorded": "دفعة {amount} ({method})",
+    "nav.dashboard": "لوحة التحكم",
+  "dash.title": "لوحة التحكم",
+  "dash.today": "اليوم",
+  "dash.prev_day": "السابق",
+  "dash.next_day": "التالي",
+  "dash.jump_today": "اليوم",
+
+  "dash.kpi.revenue": "الإيرادات",
+  "dash.kpi.revenue_sub": "{count} دفعة",
+  "dash.kpi.expenses": "المصروفات",
+  "dash.kpi.expenses_sub": "{count} مصروف",
+  "dash.kpi.net": "صافي اليوم",
+  "dash.kpi.net_sub": "الإيرادات − المصروفات",
+  "dash.kpi.attendance": "الحضور",
+  "dash.kpi.attendance_sub": "إجمالي المسجَّلين اليوم",
+
+  "dash.by_activity": "الحضور حسب النشاط",
+  "dash.by_activity_empty": "لا يوجد حضور مسجَّل لهذا اليوم.",
+  "dash.total": "الإجمالي",
+
+  "dash.payments": "مدفوعات اليوم",
+  "dash.payments_empty": "لا توجد مدفوعات لهذا اليوم.",
+
+  "dash.signups": "تسجيلات اليوم",
+  "dash.signups_empty": "لا توجد تسجيلات لهذا اليوم.",
+
+  "dash.alerts": "تنبيهات",
+  "dash.alerts_empty": "لا توجد تنبيهات.",
+  "dash.alert.low_sessions": "«{name}» متبقٍ لديه {count} حصة ({activity})",
+  "dash.alert.expiring_soon": "اشتراك «{name}» ينتهي في {date} ({activity})",
+
+  "dash.print_day": "🖨 طباعة اليوم",
+  "dash.close_day": "✓ إغلاق اليوم",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

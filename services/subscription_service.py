@@ -66,13 +66,53 @@ def activate(
         payment_amount=payment_amount,
         payment_date=payment_date.isoformat(),
     )
-    return subscriptions_repo.create(sub)
+    new_sub_id = subscriptions_repo.create(sub)
+
+    # Log the initial payment into the ledger if there is one
+    if payment_amount and payment_amount > 0:
+        try:
+            from services import payment_service
+            payment_service.record(
+                player_id=player_id,
+                amount=payment_amount,
+                payment_date=payment_date,
+                subscription_id=new_sub_id,
+                method="cash",
+                notes="Initial subscription payment",
+            )
+        except Exception as e:
+            print(f"[payment_service] failed to log initial payment: {e}")
+
+    return new_sub_id
 
 
 def record_payment(subscription_id: int, payment_amount: float, payment_date: date) -> None:
+    """
+    Record a payment against an EXISTING subscription. Two things happen:
+
+    1. A ledger row is inserted into `payments` (source of truth).
+    2. The subscription row's denormalized `payment_amount` / `payment_date`
+       are updated for backwards compatibility, and expiry is recomputed.
+    """
     sub = subscriptions_repo.get_by_id(subscription_id)
     if sub is None:
         return
+
+    # 1. Ledger entry
+    try:
+        from services import payment_service
+        payment_service.record(
+            player_id=sub.player_id,
+            amount=payment_amount,
+            payment_date=payment_date,
+            subscription_id=subscription_id,
+            method="cash",
+            notes="Subscription payment",
+        )
+    except Exception as e:
+        print(f"[payment_service] failed to log ledger entry: {e}")
+
+    # 2. Update subscription row (denormalized copy + expiry)
     start = date.fromisoformat(sub.start_date)
     new_expiry = compute_expiry_date(start, payment_date)
     new_status = "active" if date.today() < new_expiry else "expired"
@@ -83,7 +123,6 @@ def record_payment(subscription_id: int, payment_amount: float, payment_date: da
         new_expiry.isoformat(),
         new_status,
     )
-
 
 # ---------------------------------------------------------------------------
 # Reads

@@ -238,6 +238,13 @@ class PlayerRecordsTab(ThemedWidget, QWidget):
         self._all_subs = subscription_service.get_history(self.player_id)
         self._events = history_service.get_timeline(self.player_id)
 
+        # Total paid (from the ledger)
+        try:
+            from services import payment_service
+            self._payments = payment_service.list_for_player(self.player_id)
+        except Exception:
+            self._payments = []
+
         self._render_kpis()
         self._render_month_grid()
         self._render_subs()
@@ -283,6 +290,15 @@ class PlayerRecordsTab(ThemedWidget, QWidget):
             self.remaining_card.set_subtitle(t("progress.kpi.remaining_sub"))
         else:
             self.remaining_card.set_subtitle(t("progress.kpi.remaining_none"))
+
+        # Total paid from ledger
+        total_paid = sum(p.amount for p in getattr(self, "_payments", []))
+        if total_paid > 0:
+            self.total_card.set_subtitle(
+                t("progress.kpi.total_sub_with_paid",
+                  start=self._earliest_sub_start(),
+                  paid=f"{total_paid:,.0f}")
+            )
 
     def _earliest_sub_start(self) -> str:
         if self._all_subs:

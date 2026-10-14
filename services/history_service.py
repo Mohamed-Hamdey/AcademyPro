@@ -37,13 +37,10 @@ class TimelineEvent:
 # ---------------------------------------------------------------------------
 
 def get_timeline(player_id: int) -> list[TimelineEvent]:
-    """
-    Return the full merged timeline for a player, newest first.
-    """
     events = []
     events.extend(_attendance_events(player_id))
+    events.extend(_payment_events(player_id))
     events.extend(_audit_events(player_id))
-    # Sort by timestamp DESC (newest first)
     events.sort(key=lambda e: e.when, reverse=True)
     return events
 
@@ -87,6 +84,36 @@ def _attendance_events(player_id: int) -> list[TimelineEvent]:
         ))
     return events
 
+def _payment_events(player_id: int) -> list[TimelineEvent]:
+    """
+    Every payment for this player, sourced from the payments ledger.
+    """
+    from repositories import payments_repo
+    from ui.i18n import t
+
+    payments = payments_repo.list_for_player(player_id)
+    events = []
+    for p in payments:
+        sign = "−" if p.amount < 0 else ""
+        amount = f"{sign}{abs(p.amount):,.0f} {p.currency}"
+        summary = t("history.payment.recorded", amount=amount, method=p.method)
+        if p.notes:
+            summary += f" · {p.notes}"
+        events.append(TimelineEvent(
+            when=f"{p.payment_date} 00:00:00",
+            kind="payment",
+            action="payment.recorded",
+            summary=summary,
+            details={
+                "amount": p.amount,
+                "currency": p.currency,
+                "method": p.method,
+                "notes": p.notes,
+                "recorded_by": p.recorded_by,
+                "subscription_id": p.subscription_id,
+            },
+        ))
+    return events
 
 def _attendance_summary(action: str, row) -> str:
     """Localized short text like 'Allowed · Kung Fu' or 'Denied (no sessions)'."""
@@ -150,6 +177,10 @@ def _audit_events(player_id: int) -> list[TimelineEvent]:
     events = []
     for r in list(player_rows) + list(sub_rows):
         action = r["action"]
+        # Skip payment audits — the payments ledger now provides these
+        # with the actual amount, so showing both would be a duplicate.
+        if action == "subscription.record_payment":
+            continue
         events.append(TimelineEvent(
             when=r["created_at"],
             kind=_audit_kind(action),
