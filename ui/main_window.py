@@ -11,7 +11,7 @@ stays logged out until they authenticate again.
 import os
 import sys
 from ui.screens.dashboard_screen import DashboardScreen
-
+from ui.screens.expenses_screen import ExpensesScreen
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QDialog,
 )
@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
         self._register_page("nav.manage_players", "players.title",   PlayerListScreen(),  "players.view")
         self._register_page("nav.activities", "activities.title", ActivitiesScreen(), "activities.manage")
         self._register_page("nav.users",          "users.title",   UsersScreen(),     "users.manage")
+        self._register_page("nav.expenses", "expenses.title", ExpensesScreen(), "expenses.manage")
         self._register_page("nav.audit",          "audit.title",   AuditScreen(),     "audit.view")
 
         # One signal drives everything.
@@ -127,6 +128,7 @@ class MainWindow(QMainWindow):
             "nav.manage_players": "▤",
             "nav.users":          "👥",
             "nav.activities":     "🏃",
+            "nav.expenses":       "💸",
             "nav.audit":          "🗒",
         }.get(nav_key, "•")
 

@@ -233,7 +233,152 @@ def _low_session_players(threshold: int = 2) -> list[dict]:
     finally:
         conn.close()
 
+# ---------------------------------------------------------------------------
+# Monthly aggregations
+# ---------------------------------------------------------------------------
 
+def month_summary(year: int, month: int) -> dict:
+    """
+    Everything the monthly dashboard needs.
+
+    Keys:
+        year, month
+        revenue           — sum of payments in the month
+        revenue_count
+        expenses          — sum of expenses in the month
+        expenses_count
+        net               — revenue - expenses
+        attendance_total  — count of allowed scans in the month
+        revenue_by_activity — list of {activity_id, name, total, count}
+        revenue_by_method   — list of {method, total, count}
+        expenses_by_category — list of {category, total, count}
+        new_players       — count of players created in the month
+        new_player_list   — list of dicts
+    """
+    import calendar
+    first = date(year, month, 1)
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    iso_first = first.isoformat()
+    iso_last = last.isoformat()
+
+    conn = get_connection()
+    try:
+        # Revenue
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
+            FROM payments
+            WHERE payment_date >= ? AND payment_date <= ?
+            """,
+            (iso_first, iso_last),
+        ).fetchone()
+        revenue = float(row["total"]) if row else 0.0
+        revenue_count = int(row["cnt"]) if row else 0
+
+        # Expenses
+        try:
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt
+                FROM expenses
+                WHERE expense_date >= ? AND expense_date <= ?
+                """,
+                (iso_first, iso_last),
+            ).fetchone()
+            expenses = float(row["total"]) if row else 0.0
+            expenses_count = int(row["cnt"]) if row else 0
+        except Exception:
+            expenses = 0.0
+            expenses_count = 0
+
+        # Attendance
+        row = conn.execute(
+            """
+            SELECT COUNT(*) FROM attendance_log
+            WHERE substr(scan_datetime, 1, 10) >= ?
+              AND substr(scan_datetime, 1, 10) <= ?
+              AND result = 'allowed'
+            """,
+            (iso_first, iso_last),
+        ).fetchone()
+        attendance_total = int(row[0]) if row else 0
+
+        # Revenue by activity
+        rows = conn.execute(
+            """
+            SELECT s.activity_id,
+                   COALESCE(act.name_en, '?') AS name_en,
+                   COALESCE(act.name_ar, '?') AS name_ar,
+                   COALESCE(SUM(p.amount), 0) AS total,
+                   COUNT(p.payment_id) AS count
+            FROM payments p
+            LEFT JOIN subscriptions s ON s.subscription_id = p.subscription_id
+            LEFT JOIN activities act ON act.activity_id = s.activity_id
+            WHERE p.payment_date >= ? AND p.payment_date <= ?
+              AND s.activity_id IS NOT NULL
+            GROUP BY s.activity_id
+            ORDER BY total DESC
+            """,
+            (iso_first, iso_last),
+        ).fetchall()
+        revenue_by_activity = [dict(r) for r in rows]
+
+        # Revenue by method
+        rows = conn.execute(
+            """
+            SELECT method, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+            FROM payments
+            WHERE payment_date >= ? AND payment_date <= ?
+            GROUP BY method
+            ORDER BY total DESC
+            """,
+            (iso_first, iso_last),
+        ).fetchall()
+        revenue_by_method = [dict(r) for r in rows]
+
+        # Expenses by category
+        try:
+            rows = conn.execute(
+                """
+                SELECT category, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+                FROM expenses
+                WHERE expense_date >= ? AND expense_date <= ?
+                GROUP BY category
+                ORDER BY total DESC
+                """,
+                (iso_first, iso_last),
+            ).fetchall()
+            expenses_by_category = [dict(r) for r in rows]
+        except Exception:
+            expenses_by_category = []
+
+        # New players
+        rows = conn.execute(
+            """
+            SELECT player_id, full_name, phone, created_at
+            FROM players
+            WHERE substr(created_at, 1, 10) >= ?
+              AND substr(created_at, 1, 10) <= ?
+            ORDER BY created_at DESC
+            """,
+            (iso_first, iso_last),
+        ).fetchall()
+        new_player_list = [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+    return {
+        "year": year, "month": month,
+        "revenue": revenue, "revenue_count": revenue_count,
+        "expenses": expenses, "expenses_count": expenses_count,
+        "net": revenue - expenses,
+        "attendance_total": attendance_total,
+        "revenue_by_activity": revenue_by_activity,
+        "revenue_by_method": revenue_by_method,
+        "expenses_by_category": expenses_by_category,
+        "new_players": len(new_player_list),
+        "new_player_list": new_player_list,
+    }
 def _expiring_soon(days: int = 7) -> list[dict]:
     """Active subs whose expiry falls within the next N days (inclusive)."""
     conn = get_connection()

@@ -13,11 +13,13 @@ import sys
 from datetime import date, timedelta
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
+    QComboBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QScrollArea, QFrame, QSizePolicy,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
+
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import dashboard_service, activity_service
@@ -28,6 +30,12 @@ from ui.i18n import t
 from ui import i18n
 
 
+
+MONTH_KEYS = [
+    "month.january", "month.february", "month.march", "month.april",
+    "month.may", "month.june", "month.july", "month.august",
+    "month.september", "month.october", "month.november", "month.december",
+]
 class DashboardScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
@@ -44,9 +52,32 @@ class DashboardScreen(ThemedWidget, QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
+        from PyQt6.QtWidgets import QTabWidget
+        self.tabs = QTabWidget()
+
+        # ============ DAILY TAB ============
+        daily = QWidget()
+        daily_root = QVBoxLayout(daily)
+        daily_root.setContentsMargins(0, SPACING["lg"], 0, 0)
+        daily_root.setSpacing(SPACING["lg"])
+        self.tabs.addTab(daily, t("dash.tab.daily"))
+
+        self._build_daily_page(daily_root)
+
+        # ============ MONTHLY TAB ============
+        monthly = QWidget()
+        monthly_root = QVBoxLayout(monthly)
+        monthly_root.setContentsMargins(0, SPACING["lg"], 0, 0)
+        monthly_root.setSpacing(SPACING["lg"])
+        self.tabs.addTab(monthly, t("dash.tab.monthly"))
+
+        self._build_monthly_page(monthly_root)
+
+        root.addWidget(self.tabs, stretch=1)
+
+    def _build_daily_page(self, root):
         # ---------- Date navigation toolbar ----------
         self.toolbar = Toolbar()
-
         self.prev_button = QPushButton("◀  " + t("dash.prev_day"))
         make_secondary(self.prev_button)
         self.prev_button.clicked.connect(self._on_prev_day)
@@ -181,7 +212,163 @@ class DashboardScreen(ThemedWidget, QWidget):
         root.addWidget(scroll, stretch=1)
 
     # ---------- theming ----------
+    def _build_monthly_page(self, root):
+        """Monthly dashboard content."""
+        # Month navigation
+        self.month_toolbar = Toolbar()
 
+        self.month_selector = QComboBox()
+        today = date.today()
+        self._month_options = []
+        for i in range(11, -1, -1):
+            m = today.month - i
+            y = today.year
+            while m <= 0:
+                m += 12
+                y -= 1
+            self._month_options.append((y, m))
+            self.month_selector.addItem(f"{t(MONTH_KEYS[m-1])} {y}")
+        self.month_selector.setCurrentIndex(len(self._month_options) - 1)
+        self.month_selector.currentIndexChanged.connect(self._on_month_changed)
+
+        self.month_toolbar.add_leading(self.month_selector)
+        root.addWidget(self.month_toolbar)
+
+        # Month scrollable body
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        body = QVBoxLayout(content)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(SPACING["lg"])
+
+        # KPIs
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(SPACING["md"])
+        self.m_rev_card = KpiCard(t("dash.kpi.revenue"), "0")
+        self.m_exp_card = KpiCard(t("dash.kpi.expenses"), "0")
+        self.m_net_card = KpiCard(t("dash.kpi.net"), "0")
+        self.m_att_card = KpiCard(t("dash.kpi.attendance"), "0")
+        for c in (self.m_rev_card, self.m_exp_card, self.m_net_card, self.m_att_card):
+            kpi_row.addWidget(c, stretch=1)
+        body.addLayout(kpi_row)
+
+        # Row 2: Revenue by activity + expenses by category
+        row2 = QHBoxLayout()
+        row2.setSpacing(SPACING["lg"])
+
+        self.m_by_act_card = SectionCard(title=t("dash.month.by_activity"))
+        self.m_by_act_list = QListWidget()
+        self.m_by_act_list.setFrameShape(QListWidget.Shape.NoFrame)
+        self.m_by_act_list.setMinimumHeight(180)
+        self.m_by_act_card.body.addWidget(self.m_by_act_list)
+        row2.addWidget(self.m_by_act_card, stretch=1)
+
+        self.m_by_cat_card = SectionCard(title=t("dash.month.expenses_by_category"))
+        self.m_by_cat_list = QListWidget()
+        self.m_by_cat_list.setFrameShape(QListWidget.Shape.NoFrame)
+        self.m_by_cat_list.setMinimumHeight(180)
+        self.m_by_cat_card.body.addWidget(self.m_by_cat_list)
+        row2.addWidget(self.m_by_cat_card, stretch=1)
+
+        body.addLayout(row2)
+
+        # Row 3: revenue by method
+        self.m_by_method_card = SectionCard(title=t("dash.month.by_method"))
+        self.m_by_method_list = QListWidget()
+        self.m_by_method_list.setFrameShape(QListWidget.Shape.NoFrame)
+        self.m_by_method_list.setMinimumHeight(120)
+        self.m_by_method_card.body.addWidget(self.m_by_method_list)
+        body.addWidget(self.m_by_method_card)
+
+        # Footer
+        footer = QHBoxLayout()
+        footer.setSpacing(SPACING["sm"])
+        self.m_print_button = QPushButton(t("dash.print_month"))
+        make_secondary(self.m_print_button)
+        self.m_print_button.setEnabled(False)   # Batch 4.4
+        self.m_close_button = QPushButton(t("dash.close_month"))
+        make_danger(self.m_close_button)
+        self.m_close_button.setEnabled(False)   # Batch 4.4
+        footer.addStretch()
+        footer.addWidget(self.m_print_button)
+        footer.addWidget(self.m_close_button)
+        body.addLayout(footer)
+
+        body.addStretch()
+        scroll.setWidget(content)
+        root.addWidget(scroll, stretch=1)
+
+    def _on_month_changed(self, _idx):
+        self._render_month()
+
+    def _render_month(self):
+        from services import dashboard_service
+        from ui import i18n
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        s = dashboard_service.month_summary(y, m)
+
+        self.m_rev_card.set_value(f"{s['revenue']:,.0f} EGP")
+        self.m_rev_card.set_subtitle(
+            t("dash.kpi.revenue_sub", count=s["revenue_count"])
+        )
+        self.m_exp_card.set_value(f"{s['expenses']:,.0f} EGP")
+        self.m_exp_card.set_subtitle(
+            t("dash.kpi.expenses_sub", count=s["expenses_count"])
+        )
+        net = s["net"]
+        net_prefix = "+" if net > 0 else ""
+        self.m_net_card.set_value(f"{net_prefix}{net:,.0f} EGP")
+        self.m_net_card.set_subtitle(t("dash.kpi.net_sub"))
+        self.m_att_card.set_value(str(s["attendance_total"]))
+        self.m_att_card.set_subtitle(t("dash.kpi.attendance_sub"))
+
+        # Revenue by activity
+        self.m_by_act_list.clear()
+        if not s["revenue_by_activity"]:
+            item = QListWidgetItem(t("dash.month.no_data"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.m_by_act_list.addItem(item)
+        else:
+            tm = theme()
+            for row in s["revenue_by_activity"]:
+                name = (row.get("name_ar") or row.get("name_en") or "?"
+                        if i18n.current_language() == "ar"
+                        else row.get("name_en") or row.get("name_ar") or "?")
+                text = f"{name}:   {row['total']:,.0f} EGP   ({row['count']})"
+                item = QListWidgetItem(text)
+                item.setForeground(QColor(tm.color("text")))
+                self.m_by_act_list.addItem(item)
+
+        # Expenses by category
+        self.m_by_cat_list.clear()
+        if not s["expenses_by_category"]:
+            item = QListWidgetItem(t("dash.month.no_data"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.m_by_cat_list.addItem(item)
+        else:
+            tm = theme()
+            for row in s["expenses_by_category"]:
+                name = t(f"expenses.cat.{row['category']}")
+                text = f"{name}:   {row['total']:,.0f} EGP   ({row['count']})"
+                item = QListWidgetItem(text)
+                item.setForeground(QColor(tm.color("danger")))
+                self.m_by_cat_list.addItem(item)
+
+        # Revenue by method
+        self.m_by_method_list.clear()
+        if not s["revenue_by_method"]:
+            item = QListWidgetItem(t("dash.month.no_data"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.m_by_method_list.addItem(item)
+        else:
+            tm = theme()
+            for row in s["revenue_by_method"]:
+                text = f"{row['method']}:   {row['total']:,.0f} EGP   ({row['count']})"
+                item = QListWidgetItem(text)
+                item.setForeground(QColor(tm.color("text")))
+                self.m_by_method_list.addItem(item)
     def restyle(self):
         tm = theme()
 
@@ -252,6 +439,9 @@ class DashboardScreen(ThemedWidget, QWidget):
     def refresh(self):
         self._summary = dashboard_service.day_summary(self._selected_date)
         self._render()
+        # Also refresh the month tab
+        if hasattr(self, "_month_options"):
+            self._render_month()
 
     def _render(self):
         s = self._summary
