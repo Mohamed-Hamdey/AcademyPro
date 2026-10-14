@@ -528,6 +528,29 @@
   "dash.month.no_data": "لا توجد بيانات لهذا الشهر.",
   "dash.print_month": "🖨 طباعة الشهر",
   "dash.close_month": "✓ إغلاق الشهر",
+    "dash.print_dialog.day_title": "طباعة تقرير اليوم",
+  "dash.print_dialog.month_title": "طباعة تقرير الشهر",
+  "dash.report.day_title": "تقرير يوم",
+  "dash.report.month_title": "تقرير شهر",
+
+  "dash.closed_badge": "مُغلق",
+  "dash.reclose_day": "✓ إعادة إغلاق اليوم",
+  "dash.reclose_month": "✓ إعادة إغلاق الشهر",
+  "dash.reopen_day": "فتح اليوم",
+  "dash.reopen_month": "فتح الشهر",
+
+  "dash.confirm.close_day_title": "إغلاق اليوم",
+  "dash.confirm.close_day_msg": "سيتم حفظ لقطة لإجماليات يوم {date}. هل تريد المتابعة؟",
+  "dash.confirm.close_month_title": "إغلاق الشهر",
+  "dash.confirm.close_month_msg": "سيتم حفظ لقطة لإجماليات شهر {month}. هل تريد المتابعة؟",
+  "dash.confirm.reopen_day_title": "فتح اليوم",
+  "dash.confirm.reopen_day_msg": "سيتم حذف لقطة الإغلاق ليوم {date} حتى يمكن إعادة إغلاقه. هل تريد المتابعة؟",
+  "dash.confirm.reopen_month_title": "فتح الشهر",
+  "dash.confirm.reopen_month_msg": "سيتم حذف لقطة الإغلاق لشهر {month}. هل تريد المتابعة؟",
+
+  "dash.close_done_title": "تم الإغلاق",
+  "dash.close_done_day_msg": "تم حفظ لقطة إغلاق اليوم.",
+  "dash.close_done_month_msg": "تم حفظ لقطة إغلاق الشهر.",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

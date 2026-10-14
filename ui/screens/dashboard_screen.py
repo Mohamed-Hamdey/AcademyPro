@@ -1,11 +1,13 @@
 """
-Manager dashboard — daily view.
+Manager dashboard — daily + monthly views.
 
-Shows revenue, expenses, net, attendance for a chosen day, plus payment
-list, new signups, and alerts (low sessions, expiring soon).
+Daily: revenue, expenses, net, attendance, per-activity breakdown, payments,
+signups, alerts. Print + Close buttons.
 
-Manager-only. Wrapped in a scroll area so nothing clips when the window
-is short.
+Monthly: revenue, expenses, net, attendance, revenue by activity,
+revenue by method, expenses by category. Print + Close buttons.
+
+Manager-only (permission: financials.view).
 """
 
 import os
@@ -13,22 +15,20 @@ import sys
 from datetime import date, timedelta
 
 from PyQt6.QtWidgets import (
-    QComboBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QScrollArea, QFrame, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
+    QListWidgetItem, QScrollArea, QFrame, QTabWidget, QComboBox,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from services import dashboard_service, activity_service
-from ui.components import SectionCard, KpiCard, Toolbar, EmptyState
+from services import dashboard_service, close_service
+from ui.components import SectionCard, KpiCard, Toolbar, EmptyState, Pill
 from ui.theme import theme, ThemedWidget, make_secondary, make_danger
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
 from ui import i18n
-
+from ui.message_box import info, ask
 
 
 MONTH_KEYS = [
@@ -36,11 +36,14 @@ MONTH_KEYS = [
     "month.may", "month.june", "month.july", "month.august",
     "month.september", "month.october", "month.november", "month.december",
 ]
+
+
 class DashboardScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self._selected_date = date.today()
         self._summary = None
+        self._month_summary = None
         self._build_ui()
         self.refresh()
         self._init_theme()
@@ -52,7 +55,6 @@ class DashboardScreen(ThemedWidget, QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        from PyQt6.QtWidgets import QTabWidget
         self.tabs = QTabWidget()
 
         # ============ DAILY TAB ============
@@ -75,9 +77,12 @@ class DashboardScreen(ThemedWidget, QWidget):
 
         root.addWidget(self.tabs, stretch=1)
 
+    # ---------- Daily page ----------
+
     def _build_daily_page(self, root):
         # ---------- Date navigation toolbar ----------
         self.toolbar = Toolbar()
+
         self.prev_button = QPushButton("◀  " + t("dash.prev_day"))
         make_secondary(self.prev_button)
         self.prev_button.clicked.connect(self._on_prev_day)
@@ -93,10 +98,14 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.date_label = QLabel()
         self.date_label.setStyleSheet("font-size: 14px; font-weight: 700;")
 
+        self.closed_pill = Pill("", "success")
+        self.closed_pill.setVisible(False)
+
         self.toolbar.add_leading(self.prev_button)
         self.toolbar.add_leading(self.today_button)
         self.toolbar.add_leading(self.next_button)
         self.toolbar.add_leading(self.date_label)
+        self.toolbar.add_trailing(self.closed_pill)
 
         root.addWidget(self.toolbar)
 
@@ -113,17 +122,15 @@ class DashboardScreen(ThemedWidget, QWidget):
         # KPI row
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(SPACING["md"])
-
-        self.rev_card       = KpiCard(t("dash.kpi.revenue"), "0")
-        self.exp_card       = KpiCard(t("dash.kpi.expenses"), "0")
-        self.net_card       = KpiCard(t("dash.kpi.net"), "0")
-        self.att_card       = KpiCard(t("dash.kpi.attendance"), "0")
-
+        self.rev_card = KpiCard(t("dash.kpi.revenue"), "0")
+        self.exp_card = KpiCard(t("dash.kpi.expenses"), "0")
+        self.net_card = KpiCard(t("dash.kpi.net"), "0")
+        self.att_card = KpiCard(t("dash.kpi.attendance"), "0")
         for c in (self.rev_card, self.exp_card, self.net_card, self.att_card):
             kpi_row.addWidget(c, stretch=1)
         body.addLayout(kpi_row)
 
-        # Row 2: attendance by activity + payments
+        # Row 2: attendance + payments
         row2 = QHBoxLayout()
         row2.setSpacing(SPACING["lg"])
 
@@ -155,7 +162,7 @@ class DashboardScreen(ThemedWidget, QWidget):
 
         body.addLayout(row2)
 
-        # Row 3: new signups + alerts
+        # Row 3: signups + alerts
         row3 = QHBoxLayout()
         row3.setSpacing(SPACING["lg"])
 
@@ -193,16 +200,22 @@ class DashboardScreen(ThemedWidget, QWidget):
 
         self.print_button = QPushButton(t("dash.print_day"))
         make_secondary(self.print_button)
-        self.print_button.clicked.connect(self._on_print)
-        self.print_button.setEnabled(False)   # enabled in 4.4
+        self.print_button.clicked.connect(self._on_print_day)
+        self.print_button.setEnabled(True)
+
+        self.reopen_button = QPushButton(t("dash.reopen_day"))
+        make_secondary(self.reopen_button)
+        self.reopen_button.clicked.connect(self._on_reopen_day)
+        self.reopen_button.setVisible(False)
 
         self.close_button = QPushButton(t("dash.close_day"))
         make_danger(self.close_button)
         self.close_button.clicked.connect(self._on_close_day)
-        self.close_button.setEnabled(False)   # enabled in 4.4
+        self.close_button.setEnabled(True)
 
         footer.addStretch()
         footer.addWidget(self.print_button)
+        footer.addWidget(self.reopen_button)
         footer.addWidget(self.close_button)
         body.addLayout(footer)
 
@@ -211,10 +224,9 @@ class DashboardScreen(ThemedWidget, QWidget):
         scroll.setWidget(content)
         root.addWidget(scroll, stretch=1)
 
-    # ---------- theming ----------
+    # ---------- Monthly page ----------
+
     def _build_monthly_page(self, root):
-        """Monthly dashboard content."""
-        # Month navigation
         self.month_toolbar = Toolbar()
 
         self.month_selector = QComboBox()
@@ -231,10 +243,13 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.month_selector.setCurrentIndex(len(self._month_options) - 1)
         self.month_selector.currentIndexChanged.connect(self._on_month_changed)
 
+        self.m_closed_pill = Pill("", "success")
+        self.m_closed_pill.setVisible(False)
+
         self.month_toolbar.add_leading(self.month_selector)
+        self.month_toolbar.add_trailing(self.m_closed_pill)
         root.addWidget(self.month_toolbar)
 
-        # Month scrollable body
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -243,7 +258,6 @@ class DashboardScreen(ThemedWidget, QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(SPACING["lg"])
 
-        # KPIs
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(SPACING["md"])
         self.m_rev_card = KpiCard(t("dash.kpi.revenue"), "0")
@@ -254,7 +268,6 @@ class DashboardScreen(ThemedWidget, QWidget):
             kpi_row.addWidget(c, stretch=1)
         body.addLayout(kpi_row)
 
-        # Row 2: Revenue by activity + expenses by category
         row2 = QHBoxLayout()
         row2.setSpacing(SPACING["lg"])
 
@@ -274,7 +287,6 @@ class DashboardScreen(ThemedWidget, QWidget):
 
         body.addLayout(row2)
 
-        # Row 3: revenue by method
         self.m_by_method_card = SectionCard(title=t("dash.month.by_method"))
         self.m_by_method_list = QListWidget()
         self.m_by_method_list.setFrameShape(QListWidget.Shape.NoFrame)
@@ -282,17 +294,21 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.m_by_method_card.body.addWidget(self.m_by_method_list)
         body.addWidget(self.m_by_method_card)
 
-        # Footer
         footer = QHBoxLayout()
         footer.setSpacing(SPACING["sm"])
         self.m_print_button = QPushButton(t("dash.print_month"))
         make_secondary(self.m_print_button)
-        self.m_print_button.setEnabled(False)   # Batch 4.4
+        self.m_print_button.clicked.connect(self._on_print_month)
+        self.m_reopen_button = QPushButton(t("dash.reopen_month"))
+        make_secondary(self.m_reopen_button)
+        self.m_reopen_button.clicked.connect(self._on_reopen_month)
+        self.m_reopen_button.setVisible(False)
         self.m_close_button = QPushButton(t("dash.close_month"))
         make_danger(self.m_close_button)
-        self.m_close_button.setEnabled(False)   # Batch 4.4
+        self.m_close_button.clicked.connect(self._on_close_month)
         footer.addStretch()
         footer.addWidget(self.m_print_button)
+        footer.addWidget(self.m_reopen_button)
         footer.addWidget(self.m_close_button)
         body.addLayout(footer)
 
@@ -300,75 +316,8 @@ class DashboardScreen(ThemedWidget, QWidget):
         scroll.setWidget(content)
         root.addWidget(scroll, stretch=1)
 
-    def _on_month_changed(self, _idx):
-        self._render_month()
+    # ---------- theming ----------
 
-    def _render_month(self):
-        from services import dashboard_service
-        from ui import i18n
-        y, m = self._month_options[self.month_selector.currentIndex()]
-        s = dashboard_service.month_summary(y, m)
-
-        self.m_rev_card.set_value(f"{s['revenue']:,.0f} EGP")
-        self.m_rev_card.set_subtitle(
-            t("dash.kpi.revenue_sub", count=s["revenue_count"])
-        )
-        self.m_exp_card.set_value(f"{s['expenses']:,.0f} EGP")
-        self.m_exp_card.set_subtitle(
-            t("dash.kpi.expenses_sub", count=s["expenses_count"])
-        )
-        net = s["net"]
-        net_prefix = "+" if net > 0 else ""
-        self.m_net_card.set_value(f"{net_prefix}{net:,.0f} EGP")
-        self.m_net_card.set_subtitle(t("dash.kpi.net_sub"))
-        self.m_att_card.set_value(str(s["attendance_total"]))
-        self.m_att_card.set_subtitle(t("dash.kpi.attendance_sub"))
-
-        # Revenue by activity
-        self.m_by_act_list.clear()
-        if not s["revenue_by_activity"]:
-            item = QListWidgetItem(t("dash.month.no_data"))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.m_by_act_list.addItem(item)
-        else:
-            tm = theme()
-            for row in s["revenue_by_activity"]:
-                name = (row.get("name_ar") or row.get("name_en") or "?"
-                        if i18n.current_language() == "ar"
-                        else row.get("name_en") or row.get("name_ar") or "?")
-                text = f"{name}:   {row['total']:,.0f} EGP   ({row['count']})"
-                item = QListWidgetItem(text)
-                item.setForeground(QColor(tm.color("text")))
-                self.m_by_act_list.addItem(item)
-
-        # Expenses by category
-        self.m_by_cat_list.clear()
-        if not s["expenses_by_category"]:
-            item = QListWidgetItem(t("dash.month.no_data"))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.m_by_cat_list.addItem(item)
-        else:
-            tm = theme()
-            for row in s["expenses_by_category"]:
-                name = t(f"expenses.cat.{row['category']}")
-                text = f"{name}:   {row['total']:,.0f} EGP   ({row['count']})"
-                item = QListWidgetItem(text)
-                item.setForeground(QColor(tm.color("danger")))
-                self.m_by_cat_list.addItem(item)
-
-        # Revenue by method
-        self.m_by_method_list.clear()
-        if not s["revenue_by_method"]:
-            item = QListWidgetItem(t("dash.month.no_data"))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.m_by_method_list.addItem(item)
-        else:
-            tm = theme()
-            for row in s["revenue_by_method"]:
-                text = f"{row['method']}:   {row['total']:,.0f} EGP   ({row['count']})"
-                item = QListWidgetItem(text)
-                item.setForeground(QColor(tm.color("text")))
-                self.m_by_method_list.addItem(item)
     def restyle(self):
         tm = theme()
 
@@ -382,13 +331,18 @@ class DashboardScreen(ThemedWidget, QWidget):
             f"}}"
         )
 
-        self._style_kpi(self.rev_card, tm.color("success"))
-        self._style_kpi(self.exp_card, tm.color("danger"))
-        self._style_kpi(self.net_card, tm.color("primary"))
-        self._style_kpi(self.att_card, tm.color("text"))
+        self._style_kpi(self.rev_card,   tm.color("success"))
+        self._style_kpi(self.exp_card,   tm.color("danger"))
+        self._style_kpi(self.net_card,   tm.color("primary"))
+        self._style_kpi(self.att_card,   tm.color("text"))
+        self._style_kpi(self.m_rev_card, tm.color("success"))
+        self._style_kpi(self.m_exp_card, tm.color("danger"))
+        self._style_kpi(self.m_net_card, tm.color("primary"))
+        self._style_kpi(self.m_att_card, tm.color("text"))
 
         for lst in (self.attendance_list, self.payments_list,
-                    self.signups_list, self.alerts_list):
+                    self.signups_list, self.alerts_list,
+                    self.m_by_act_list, self.m_by_cat_list, self.m_by_method_list):
             lst.setStyleSheet(
                 f"QListWidget {{"
                 f"  background-color: transparent;"
@@ -407,10 +361,12 @@ class DashboardScreen(ThemedWidget, QWidget):
             )
 
         if self._summary is not None:
-            self._render()
+            self._render_day()
+        if self._month_summary is not None:
+            self._render_month()
 
     @staticmethod
-    def _style_kpi(kpi: KpiCard, color: str):
+    def _style_kpi(kpi, color):
         kpi.value_label.setStyleSheet(
             f"QLabel#kpiValue {{"
             f"  color: {color};"
@@ -434,35 +390,48 @@ class DashboardScreen(ThemedWidget, QWidget):
         self._selected_date = date.today()
         self.refresh()
 
+    def _on_month_changed(self, _idx):
+        self._refresh_month()
+
     # ---------- data ----------
 
     def refresh(self):
         self._summary = dashboard_service.day_summary(self._selected_date)
-        self._render()
-        # Also refresh the month tab
-        if hasattr(self, "_month_options"):
-            self._render_month()
+        self._render_day()
+        self._refresh_month()
 
-    def _render(self):
+    def _refresh_month(self):
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        self._month_summary = dashboard_service.month_summary(y, m)
+        self._render_month()
+
+    def _render_day(self):
         s = self._summary
 
-        # Date label
+        # Date label + closed badge
         is_today = self._selected_date == date.today()
         label = self._selected_date.isoformat()
         if is_today:
             label += "  (" + t("dash.today") + ")"
         self.date_label.setText(label)
 
+        closed = close_service.get_day_close(self._selected_date)
+        if closed:
+            self.closed_pill.set_status(t("dash.closed_badge"), "success")
+            self.closed_pill.setVisible(True)
+            self.reopen_button.setVisible(True)
+            self.close_button.setText(t("dash.reclose_day"))
+        else:
+            self.closed_pill.setVisible(False)
+            self.reopen_button.setVisible(False)
+            self.close_button.setText(t("dash.close_day"))
+
         # KPIs
         self.rev_card.set_value(f"{s['revenue']:,.0f} EGP")
-        self.rev_card.set_subtitle(
-            t("dash.kpi.revenue_sub", count=s["revenue_count"])
-        )
+        self.rev_card.set_subtitle(t("dash.kpi.revenue_sub", count=s["revenue_count"]))
 
         self.exp_card.set_value(f"{s['expenses']:,.0f} EGP")
-        self.exp_card.set_subtitle(
-            t("dash.kpi.expenses_sub", count=s["expenses_count"])
-        )
+        self.exp_card.set_subtitle(t("dash.kpi.expenses_sub", count=s["expenses_count"]))
 
         net = s["net"]
         net_prefix = "+" if net > 0 else ""
@@ -484,11 +453,9 @@ class DashboardScreen(ThemedWidget, QWidget):
             tm = theme()
             for row in by_act:
                 act_name = self._activity_display_name(row)
-                text = f"{act_name}:   {row['cnt']}"
-                item = QListWidgetItem(text)
+                item = QListWidgetItem(f"{act_name}:   {row['cnt']}")
                 item.setForeground(QColor(tm.color("text")))
                 self.attendance_list.addItem(item)
-            # Total row
             total_item = QListWidgetItem(
                 f"────\n{t('dash.total')}:   {s['attendance_total']}"
             )
@@ -532,37 +499,13 @@ class DashboardScreen(ThemedWidget, QWidget):
             self.signups_empty.hide()
             tm = theme()
             for p in new_players:
-                text = f"{p['full_name']}   ·   {p['phone']}"
-                item = QListWidgetItem(text)
+                item = QListWidgetItem(f"{p['full_name']}   ·   {p['phone']}")
                 item.setForeground(QColor(tm.color("text")))
                 self.signups_list.addItem(item)
 
         # Alerts
         self.alerts_list.clear()
-        alerts = []
-        for lp in s["low_session_players"]:
-            act = self._activity_display_name({
-                "name_en": lp.get("activity_name_en"),
-                "name_ar": lp.get("activity_name_ar"),
-            })
-            alerts.append(
-                t("dash.alert.low_sessions",
-                  name=lp["full_name"],
-                  count=lp["sessions_remaining"],
-                  activity=act or "")
-            )
-        for exp in s["expiring_soon"]:
-            act = self._activity_display_name({
-                "name_en": exp.get("activity_name_en"),
-                "name_ar": exp.get("activity_name_ar"),
-            })
-            alerts.append(
-                t("dash.alert.expiring_soon",
-                  name=exp["full_name"],
-                  date=exp["expiry_date"],
-                  activity=act or "")
-            )
-
+        alerts = self._collect_alerts(s)
         if not alerts:
             self.alerts_list.hide()
             self.alerts_empty.show()
@@ -575,20 +518,155 @@ class DashboardScreen(ThemedWidget, QWidget):
                 item.setForeground(QColor(tm.color("warning")))
                 self.alerts_list.addItem(item)
 
+    def _render_month(self):
+        s = self._month_summary
+        if s is None:
+            return
+
+        # Closed badge
+        closed = close_service.get_month_close(s["year"], s["month"])
+        if closed:
+            self.m_closed_pill.set_status(t("dash.closed_badge"), "success")
+            self.m_closed_pill.setVisible(True)
+            self.m_reopen_button.setVisible(True)
+            self.m_close_button.setText(t("dash.reclose_month"))
+        else:
+            self.m_closed_pill.setVisible(False)
+            self.m_reopen_button.setVisible(False)
+            self.m_close_button.setText(t("dash.close_month"))
+
+        # KPIs
+        self.m_rev_card.set_value(f"{s['revenue']:,.0f} EGP")
+        self.m_rev_card.set_subtitle(t("dash.kpi.revenue_sub", count=s["revenue_count"]))
+        self.m_exp_card.set_value(f"{s['expenses']:,.0f} EGP")
+        self.m_exp_card.set_subtitle(t("dash.kpi.expenses_sub", count=s["expenses_count"]))
+        net = s["net"]
+        net_prefix = "+" if net > 0 else ""
+        self.m_net_card.set_value(f"{net_prefix}{net:,.0f} EGP")
+        self.m_net_card.set_subtitle(t("dash.kpi.net_sub"))
+        self.m_att_card.set_value(str(s["attendance_total"]))
+        self.m_att_card.set_subtitle(t("dash.kpi.attendance_sub"))
+
+        # Revenue by activity
+        self.m_by_act_list.clear()
+        if not s["revenue_by_activity"]:
+            item = QListWidgetItem(t("dash.month.no_data"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.m_by_act_list.addItem(item)
+        else:
+            tm = theme()
+            for row in s["revenue_by_activity"]:
+                name = self._activity_display_name(row)
+                text = f"{name}:   {row['total']:,.0f} EGP   ({row['count']})"
+                item = QListWidgetItem(text)
+                item.setForeground(QColor(tm.color("text")))
+                self.m_by_act_list.addItem(item)
+
+        # Expenses by category
+        self.m_by_cat_list.clear()
+        if not s["expenses_by_category"]:
+            item = QListWidgetItem(t("dash.month.no_data"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.m_by_cat_list.addItem(item)
+        else:
+            tm = theme()
+            for row in s["expenses_by_category"]:
+                name = t(f"expenses.cat.{row['category']}")
+                text = f"{name}:   {row['total']:,.0f} EGP   ({row['count']})"
+                item = QListWidgetItem(text)
+                item.setForeground(QColor(tm.color("danger")))
+                self.m_by_cat_list.addItem(item)
+
+        # Revenue by method
+        self.m_by_method_list.clear()
+        if not s["revenue_by_method"]:
+            item = QListWidgetItem(t("dash.month.no_data"))
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.m_by_method_list.addItem(item)
+        else:
+            tm = theme()
+            for row in s["revenue_by_method"]:
+                text = f"{row['method']}:   {row['total']:,.0f} EGP   ({row['count']})"
+                item = QListWidgetItem(text)
+                item.setForeground(QColor(tm.color("text")))
+                self.m_by_method_list.addItem(item)
+
     # ---------- helpers ----------
 
     def _activity_display_name(self, row: dict) -> str:
-        """Prefer Arabic if the app is in Arabic, else English."""
         if i18n.current_language() == "ar":
             return row.get("name_ar") or row.get("name_en") or ""
         return row.get("name_en") or row.get("name_ar") or ""
 
-    # ---------- actions (stubs) ----------
+    def _collect_alerts(self, s: dict) -> list[str]:
+        alerts = []
+        for lp in s.get("low_session_players", []):
+            act = self._activity_display_name({
+                "name_en": lp.get("activity_name_en"),
+                "name_ar": lp.get("activity_name_ar"),
+            })
+            alerts.append(
+                t("dash.alert.low_sessions",
+                  name=lp["full_name"],
+                  count=lp["sessions_remaining"],
+                  activity=act or "")
+            )
+        for exp in s.get("expiring_soon", []):
+            act = self._activity_display_name({
+                "name_en": exp.get("activity_name_en"),
+                "name_ar": exp.get("activity_name_ar"),
+            })
+            alerts.append(
+                t("dash.alert.expiring_soon",
+                  name=exp["full_name"],
+                  date=exp["expiry_date"],
+                  activity=act or "")
+            )
+        return alerts
 
-    def _on_print(self):
-        # Enabled in Batch 4.4
-        pass
+    # ---------- actions ----------
+
+    def _on_print_day(self):
+        from services.dashboard_pdf import print_day
+        print_day(self, self._selected_date)
+
+    def _on_print_month(self):
+        from services.dashboard_pdf import print_month
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        print_month(self, y, m)
 
     def _on_close_day(self):
-        # Enabled in Batch 4.4
-        pass
+        if not ask(self, t("dash.confirm.close_day_title"),
+                   t("dash.confirm.close_day_msg",
+                     date=self._selected_date.isoformat())):
+            return
+        close_service.close_day(self._selected_date)
+        self.refresh()
+        info(self, t("dash.close_done_title"), t("dash.close_done_day_msg"))
+
+    def _on_close_month(self):
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        label = f"{t(MONTH_KEYS[m-1])} {y}"
+        if not ask(self, t("dash.confirm.close_month_title"),
+                   t("dash.confirm.close_month_msg", month=label)):
+            return
+        close_service.close_month(y, m)
+        self.refresh()
+        info(self, t("dash.close_done_title"), t("dash.close_done_month_msg"))
+
+    def _on_reopen_day(self):
+        if not ask(self, t("dash.confirm.reopen_day_title"),
+                   t("dash.confirm.reopen_day_msg",
+                     date=self._selected_date.isoformat())):
+            return
+        close_service.reopen_day(self._selected_date)
+        self.refresh()
+
+    def _on_reopen_month(self):
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        label = f"{t(MONTH_KEYS[m-1])} {y}"
+        if not ask(self, t("dash.confirm.reopen_month_title"),
+                   t("dash.confirm.reopen_month_msg", month=label)):
+            return
+        close_service.reopen_month(y, m)
+        self.refresh()

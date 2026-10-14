@@ -533,6 +533,29 @@
   "dash.month.no_data": "No data for this month.",
   "dash.print_month": "🖨 Print month",
   "dash.close_month": "✓ Close month",
+    "dash.print_dialog.day_title": "Print Day Report",
+  "dash.print_dialog.month_title": "Print Month Report",
+  "dash.report.day_title": "Day Report",
+  "dash.report.month_title": "Month Report",
+
+  "dash.closed_badge": "CLOSED",
+  "dash.reclose_day": "✓ Re-close day",
+  "dash.reclose_month": "✓ Re-close month",
+  "dash.reopen_day": "Reopen day",
+  "dash.reopen_month": "Reopen month",
+
+  "dash.confirm.close_day_title": "Close day",
+  "dash.confirm.close_day_msg": "A snapshot of {date}'s totals will be saved. Continue?",
+  "dash.confirm.close_month_title": "Close month",
+  "dash.confirm.close_month_msg": "A snapshot of {month}'s totals will be saved. Continue?",
+  "dash.confirm.reopen_day_title": "Reopen day",
+  "dash.confirm.reopen_day_msg": "The close snapshot for {date} will be deleted so the day can be re-closed. Continue?",
+  "dash.confirm.reopen_month_title": "Reopen month",
+  "dash.confirm.reopen_month_msg": "The close snapshot for {month} will be deleted. Continue?",
+
+  "dash.close_done_title": "Closed",
+  "dash.close_done_day_msg": "Day close snapshot saved.",
+  "dash.close_done_month_msg": "Month close snapshot saved.",
   "checkin.not_enrolled.msg": "Player \"{name}\" is not enrolled in \"{activity}\". Change the session or pick the correct activity.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }
