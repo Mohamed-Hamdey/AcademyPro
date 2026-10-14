@@ -29,7 +29,7 @@ from ui.dialogs.subscription_form_dialog import SubscriptionFormDialog
 from ui.dialogs.adjust_sessions_dialog import AdjustSessionsDialog
 from ui.dialogs.update_payment_dialog import UpdatePaymentDialog
 from logic.qr_utils import generate_qr_for_player
-from ui.components import SectionCard, Toolbar
+from ui.components import SectionCard
 from ui.theme import theme, ThemedWidget, make_danger, make_secondary
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
@@ -47,22 +47,60 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self._init_theme()
 
     # ---------- UI ----------
+    # ---------- lifecycle: header action hook ----------
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._install_header_action()
+
+    def hideEvent(self, event):
+        self._uninstall_header_action()
+        super().hideEvent(event)
+
+    def _install_header_action(self):
+        """Ask the enclosing Workspace to show our Back button."""
+        # Guard against a stale reference to a deleted C++ object.
+        try:
+            # Accessing .objectName() would raise if the C++ side is gone
+            self.back_button.objectName()
+        except RuntimeError:
+            # The button was destroyed — rebuild it.
+            self.back_button = QPushButton(t("detail.back"))
+            self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.back_button.clicked.connect(self._on_back_clicked)
+
+        ws = self._find_workspace()
+        if ws is not None and hasattr(ws, "set_header_action"):
+            ws.set_header_action(self.back_button)
+    def _uninstall_header_action(self):
+        """Remove the Back button from the Workspace header."""
+        ws = self._find_workspace()
+        if ws is not None and hasattr(ws, "set_header_action"):
+            # Only clear if we're the ones occupying the slot.
+            if getattr(ws, "_header_action_widget", None) is self.back_button:
+                ws.set_header_action(None)
+
+    def _find_workspace(self):
+        """Walk up the parent chain looking for a Workspace instance."""
+        w = self.parentWidget()
+        while w is not None:
+            if w.__class__.__name__ == "Workspace":
+                return w
+            w = w.parentWidget()
+        return None
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        # Toolbar (back button)
-        self.toolbar = Toolbar()
-        back_button = QPushButton(t("detail.back"))
-        make_secondary(back_button)
-        back_button.clicked.connect(self._on_back_clicked)
-        self.toolbar.add_leading(back_button)
-        root.addWidget(self.toolbar)
-
+        # Tabs. The Back button will be injected into the workspace
+        # header row when this screen is shown (see showEvent below).
         tabs = QTabWidget()
         root.addWidget(tabs, stretch=1)
+
+        self.back_button = QPushButton(t("detail.back"))
+        self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.back_button.clicked.connect(self._on_back_clicked)
 
         # ===== Overview tab (scrollable) =====
         overview_scroll = QScrollArea()
@@ -366,6 +404,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
     # ---------- actions ----------
 
     def _on_back_clicked(self):
+        self._uninstall_header_action()
         if self.on_back:
             self.on_back()
 

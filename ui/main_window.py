@@ -137,6 +137,9 @@ class MainWindow(QMainWindow):
         if index < 0 or index >= len(self._nav_keys_in_order):
             return
         nav_key = self._nav_keys_in_order[index]
+        # Any pending header action (e.g. a Back button) belongs to the
+        # previous page — clear it before swapping pages.
+        self.workspace.set_header_action(None)
         self.workspace.show_page_by_key(nav_key)
     def _toggle_sidebar(self):
         self.sidebar.toggle_collapsed()

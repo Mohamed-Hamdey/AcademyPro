@@ -370,6 +370,15 @@ class Workspace(QWidget):
         self.title_label = QLabel()
         header.addWidget(self.title_label)
         header.addStretch()
+
+        # Slot for a per-page header action (e.g. a Back button on
+        # screens that push their own sub-page). Empty by default.
+        self.header_action_slot = QHBoxLayout()
+        self.header_action_slot.setSpacing(8)
+        header.addLayout(self.header_action_slot)
+
+        self._header_action_widget = None
+
         layout.addLayout(header)
 
         self.pages = QStackedWidget()
@@ -407,7 +416,27 @@ class Workspace(QWidget):
 
     def set_title(self, title: str):
         self.title_label.setText(title)
+    def set_header_action(self, widget: QWidget = None):
+        # Detach the previous one — do NOT delete it. It belongs to
+        # whoever passed it in (e.g. a PlayerDetailScreen may reuse
+        # the same button across show/hide cycles).
+        if self._header_action_widget is not None:
+            try:
+                self.header_action_slot.removeWidget(self._header_action_widget)
+            except Exception:
+                pass
+            self._header_action_widget.setParent(None)
+            self._header_action_widget.hide()
+            self._header_action_widget = None
 
+        if widget is not None:
+            # If the widget already exists in some other parent, reparent
+            # it cleanly before adding it here.
+            if widget.parent() is not None and widget.parent() is not self:
+                widget.setParent(self)
+            widget.show()
+            self.header_action_slot.addWidget(widget)
+            self._header_action_widget = widget
     def restyle(self):
         # Only the title label needs inline styling. The workspace
         # background comes from the global QSS (QWidget#workspace rule).
