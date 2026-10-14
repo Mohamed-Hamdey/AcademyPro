@@ -15,12 +15,12 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QScrollArea,
     QFrame,
 )
+from ui.components import SectionCard, Toolbar, EmptyState, KpiCard, BarList
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import expense_service
-from ui.components import SectionCard, Toolbar, EmptyState, KpiCard
 from ui.dialogs.expense_form_dialog import ExpenseFormDialog
 from ui.theme import theme, ThemedWidget, make_secondary, make_danger
 from ui.design import SPACING, RADIUS
@@ -132,28 +132,27 @@ class ExpensesScreen(ThemedWidget, QWidget):
         # Action buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(SPACING["sm"])
-        self.edit_button = QPushButton(t("expenses.action.edit"))
-        make_secondary(self.edit_button)
-        self.edit_button.clicked.connect(self._on_edit)
-        self.edit_button.setEnabled(False)
 
         self.delete_button = QPushButton(t("expenses.action.delete"))
         make_danger(self.delete_button)
         self.delete_button.clicked.connect(self._on_delete)
         self.delete_button.setEnabled(False)
 
-        btn_row.addWidget(self.edit_button)
-        btn_row.addWidget(self.delete_button)
         btn_row.addStretch()
+        btn_row.addWidget(self.delete_button)
         self.table_card.body.addLayout(btn_row)
 
         body.addWidget(self.table_card)
 
         # Category breakdown
-        self.breakdown_card = SectionCard(title=t("expenses.breakdown.title"))
-        self.breakdown_list = QVBoxLayout()
-        self.breakdown_list.setSpacing(SPACING["xs"])
-        self.breakdown_card.body.addLayout(self.breakdown_list)
+        self.breakdown_card = SectionCard(title=t("expenses.breakdown.by_category"))
+        self.breakdown = BarList()
+        self.breakdown_card.body.addWidget(self.breakdown)
+        # Prevent the card from greedily filling the scroll area.
+        self.breakdown_card.setSizePolicy(
+            self.breakdown_card.sizePolicy().horizontalPolicy(),
+            self.breakdown_card.sizePolicy().verticalPolicy().Maximum,
+        )
         body.addWidget(self.breakdown_card)
 
         body.addStretch()
@@ -238,35 +237,20 @@ class ExpensesScreen(ThemedWidget, QWidget):
         self._update_actions()
 
         # Breakdown
-        while self.breakdown_list.count():
-            item = self.breakdown_list.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
         if not by_cat:
             self.breakdown_card.hide()
         else:
             self.breakdown_card.show()
+            rows = []
             for row in by_cat:
-                line = QHBoxLayout()
-                name = QLabel(t(f"expenses.cat.{row['category']}"))
-                name.setStyleSheet(
-                    f"QLabel {{ color: {tm.color('text')}; font-size: 13px; }}"
-                )
-                amount = QLabel(f"{row['total']:,.0f} EGP   ({row['count']})")
-                amount.setStyleSheet(
-                    f"QLabel {{ color: {tm.color('text_secondary')}; font-size: 13px; }}"
-                )
-                amount.setAlignment(
-                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                )
-                line.addWidget(name)
-                line.addStretch()
-                line.addWidget(amount)
-                wrap = QWidget()
-                wrap.setLayout(line)
-                self.breakdown_list.addWidget(wrap)
+                rows.append({
+                    "label": t(f"expenses.cat.{row['category']}"),
+                    "value": float(row["total"]),
+                    "count": int(row["count"]),
+                    "suffix": " EGP",
+                    "color": "danger",
+                })
+            self.breakdown.set_data(rows)
 
     def _selected(self):
         rows = self.table.selectionModel().selectedRows()
@@ -279,7 +263,6 @@ class ExpensesScreen(ThemedWidget, QWidget):
 
     def _update_actions(self):
         has = self._selected() is not None
-        self.edit_button.setEnabled(has)
         self.delete_button.setEnabled(has)
 
     # ---------- actions ----------
