@@ -551,6 +551,27 @@
   "dash.close_done_title": "تم الإغلاق",
   "dash.close_done_day_msg": "تم حفظ لقطة إغلاق اليوم.",
   "dash.close_done_month_msg": "تم حفظ لقطة إغلاق الشهر.",
+    "license.title": "تفعيل البرنامج",
+  "license.heading": "التنشيط مطلوب",
+  "license.machine_id_hint": "معرّف هذا الجهاز:",
+  "license.copy_machine_id": "نسخ المعرّف",
+  "license.copied": "تم النسخ",
+  "license.import": "استيراد ملف التنشيط",
+  "license.quit": "خروج",
+  "license.pick_file_title": "اختر ملف التنشيط",
+  "license.file_filter": "ملفات التنشيط (*.key);;كل الملفات (*.*)",
+
+  "license.status.valid": "البرنامج مُفعَّل.",
+
+  "license.reason.no_license": "لم يتم تفعيل البرنامج بعد. أرسل معرّف الجهاز إلى المزوّد لاستلام ملف التنشيط.",
+  "license.reason.malformed": "ملف التنشيط غير صالح.",
+  "license.reason.bad_signature": "التوقيع الرقمي لملف التنشيط غير صحيح.",
+  "license.reason.wrong_machine": "ملف التنشيط لا يخص هذا الجهاز.",
+  "license.reason.expired": "انتهت صلاحية التنشيط.",
+  "license.reason.expired_on": "انتهت صلاحية التنشيط بتاريخ {date}.",
+  "license.reason.not_found": "الملف غير موجود.",
+  "license.reason.copy_failed": "تعذّر نسخ ملف التنشيط.",
+  "license.reason.unknown": "سبب غير معروف.",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 

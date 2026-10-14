@@ -23,6 +23,9 @@ wheels/
 *.egg
 MANIFEST
 
+# Licensing
+license/keys/private_key.pem
+license_out/
 
 build/
 dist/

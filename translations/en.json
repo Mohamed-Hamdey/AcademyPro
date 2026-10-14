@@ -556,6 +556,27 @@
   "dash.close_done_title": "Closed",
   "dash.close_done_day_msg": "Day close snapshot saved.",
   "dash.close_done_month_msg": "Month close snapshot saved.",
+    "license.title": "Activation",
+  "license.heading": "Activation Required",
+  "license.machine_id_hint": "This machine's ID:",
+  "license.copy_machine_id": "Copy Machine ID",
+  "license.copied": "Copied",
+  "license.import": "Import License File",
+  "license.quit": "Quit",
+  "license.pick_file_title": "Choose License File",
+  "license.file_filter": "License files (*.key);;All files (*.*)",
+
+  "license.status.valid": "This device is activated.",
+
+  "license.reason.no_license": "This app is not yet activated. Send your Machine ID to your provider to receive a license file.",
+  "license.reason.malformed": "The license file is malformed.",
+  "license.reason.bad_signature": "The license signature is invalid.",
+  "license.reason.wrong_machine": "This license is for a different machine.",
+  "license.reason.expired": "The license has expired.",
+  "license.reason.expired_on": "The license expired on {date}.",
+  "license.reason.not_found": "License file not found.",
+  "license.reason.copy_failed": "Could not copy the license file.",
+  "license.reason.unknown": "Unknown reason.",
   "checkin.not_enrolled.msg": "Player \"{name}\" is not enrolled in \"{activity}\". Change the session or pick the correct activity.",
   "checkin.already_today_msg": "Player \"{name}\" has already been checked in today. Only one check-in per day is allowed."
 }

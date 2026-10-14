@@ -1,5 +1,11 @@
 """
 Application entry point.
+
+Order:
+  1. Init DB, load language, apply theme.
+  2. License check — show LicenseScreen if unlicensed.
+  3. Login — show LoginDialog.
+  4. Main window.
 """
 
 import sys
@@ -26,19 +32,34 @@ def main():
 
     theme().apply(app)
 
+    # ---- License check (before login) ----
+    from services import license_service
+    lic_status = license_service.get_status()
+    if not lic_status.valid:
+        from ui.screens.license_screen import LicenseScreen
+        lic_screen = LicenseScreen(lic_status)
+        result = lic_screen.exec()
+        if result != QDialog.DialogCode.Accepted:
+            print("[main] license not activated — exiting")
+            sys.exit(0)
+        print("[main] license accepted, proceeding to login")
+
     # ---- Login ----
     from ui.screens.login_screen import LoginDialog
     login = LoginDialog()
-    if login.exec() != QDialog.DialogCode.Accepted:
-        # User closed the login dialog — exit cleanly.
+    result = login.exec()
+    print(f"[main] login dialog returned: {result}")
+    if result != QDialog.DialogCode.Accepted:
+        print("[main] login cancelled or rejected — exiting")
         sys.exit(0)
+
+    print("[main] opening main window")
 
     # ---- Main window ----
     from ui.main_window import MainWindow
     window = MainWindow()
     window.show()
 
-    # Re-apply the theme once the window is built
     theme().apply(app)
 
     sys.exit(app.exec())

@@ -24,6 +24,9 @@ datas = [
     (os.path.join(project_root, "translations"), "translations"),
     (os.path.join(project_root, "assets", "logo"), os.path.join("assets", "logo")),
     (os.path.join(project_root, "db", "schema.sql"), "db"),
+    # Public key for license verification (private key never ships)
+    (os.path.join(project_root, "license", "keys", "public_key.pem"),
+     os.path.join("license", "keys")),
 ]
 
 # ---------------------------------------------------------------------------
@@ -57,6 +60,9 @@ hiddenimports = [
     "PyQt6.QtCore",
     "PyQt6.QtGui",
     "PyQt6.QtWidgets",
+    "cryptography",
+    "cryptography.hazmat.primitives.asymmetric.ed25519",
+    "cryptography.hazmat.primitives.serialization",
 ]
 hiddenimports += collect_submodules("cv2")
 hiddenimports += collect_submodules("pyzbar")
