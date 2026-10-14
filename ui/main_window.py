@@ -78,8 +78,8 @@ class MainWindow(QMainWindow):
         # Register pages (only those the user has permission for).
         # Order here determines sidebar order.
         self._register_page("nav.check_in",       "checkin.title",   ScanScreen(),        "checkin")
-        self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(),   "financials.view")
         self._register_page("nav.manage_players", "players.title",   PlayerListScreen(),  "players.view")
+        self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(),   "financials.view")
         self._register_page("nav.activities", "activities.title", ActivitiesScreen(), "activities.manage")
         self._register_page("nav.users",          "users.title",   UsersScreen(),     "users.manage")
         self._register_page("nav.expenses", "expenses.title", ExpensesScreen(), "expenses.manage")

@@ -15,7 +15,7 @@ import os
 import sys
 
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QPushButton,
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QMenu,
 )
 from PyQt6.QtCore import Qt, QSize
@@ -83,11 +83,7 @@ class TopBar(QWidget):
 
         layout.addWidget(self.brand_widget, stretch=1)
 
-        # ---- Global search ----
-        self.search_input = QLineEdit()
-        self.search_input.setObjectName("globalSearch")
-        self.search_input.setPlaceholderText(t("shell.search_placeholder"))
-        layout.addWidget(self.search_input)
+
 
         # ---- User menu button ----
         self.user_button = QPushButton()
@@ -117,6 +113,15 @@ class TopBar(QWidget):
     def _on_brand_clicked(self, event):
         if self._on_toggle_sidebar is not None:
             self._on_toggle_sidebar()
+
+    def _on_search_submit(self):
+        """Called when the user presses Enter in the global search box."""
+        if self._on_search is None:
+            return
+        query = self.search_input.text().strip()
+        if not query:
+            return
+        self._on_search(query)
     def _show_user_menu(self):
         menu = QMenu(self)
 
@@ -151,7 +156,6 @@ class TopBar(QWidget):
 
         # Show the menu anchored to the button
         menu.exec(self.user_button.mapToGlobal(self.user_button.rect().bottomLeft()))
-
     def _on_change_password(self):
         user = app_state.user
         if user is None:
