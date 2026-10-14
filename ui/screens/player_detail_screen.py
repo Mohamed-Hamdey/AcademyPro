@@ -274,8 +274,11 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         self._active_subs = subscription_service.get_all_active(self.player_id)
         most_recent = self._active_subs[0] if self._active_subs else None
+        display = subscription_service.get_display_status(self.player_id)
 
-        self.player_card.display_player(player, most_recent, check_in_state=None)
+        self.player_card.display_player(
+            player, most_recent, check_in_state=None, display=display,
+        )
         self._render_sub_table()
 
         self.notes_input.setPlainText(player.notes or "")

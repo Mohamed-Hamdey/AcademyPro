@@ -645,6 +645,11 @@
   "checkin.full_log.btn_close": "Close",
   "checkin.full_log.empty": "No check-ins on this day.",
   "checkin.full_log.count": "{n} entries",
+    "card.activities_label": "Activities",
+  "card.phone_label": "Phone",
+  "card.national_id_label": "National ID",
+  "card.sessions_value": "{remaining} of {total} remaining",
+  "card.no_data": "—",
   "dash.kpi.attendance_month_sub": "Total attendance this month",
 
   "dash.month.no_revenue": "No revenue recorded this month.",

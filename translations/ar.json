@@ -644,6 +644,11 @@
   "checkin.full_log.btn_close": "إغلاق",
   "checkin.full_log.empty": "لا توجد عمليات تسجيل حضور في هذا اليوم.",
   "checkin.full_log.count": "{n} سجل",
+    "card.activities_label": "الأنشطة",
+  "card.phone_label": "الهاتف",
+  "card.national_id_label": "الرقم القومي",
+  "card.sessions_value": "المتبقي {remaining} من {total}",
+  "card.no_data": "—",
   "checkin.already_today_msg": "تم تسجيل حضور اللاعب «{name}» مسبقًا اليوم. لا يمكن تسجيل الحضور أكثر من مرة في اليوم نفسه."
 
 
