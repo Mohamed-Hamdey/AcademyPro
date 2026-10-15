@@ -52,9 +52,16 @@ _STATUS_KEY = {
 class PlayerListScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
+        self._loaded = False
         self._build_ui()
-        self.refresh()
+        # Deferred to first show — see showEvent.
         self._init_theme()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self.refresh()
 
     def _build_ui(self):
         self.stack = QStackedWidget()
@@ -173,9 +180,13 @@ class PlayerListScreen(ThemedWidget, QWidget):
         plan_filter = self.plan_filter.currentData()
         status_filter = self.status_filter.currentData()
 
+        # Batch fetch statuses — one DB call instead of N.
+        player_ids = [p.player_id for p in players]
+        statuses = subscription_service.get_display_status_bulk(player_ids)
+
         rows = []
         for player in players:
-            display = subscription_service.get_display_status(player.player_id)
+            display = statuses.get(player.player_id, {"status": "none", "plan_type": None})
             if plan_filter and display["plan_type"] != plan_filter:
                 continue
             if status_filter and display["status"] != status_filter:

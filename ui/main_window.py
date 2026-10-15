@@ -75,15 +75,18 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.workspace = Workspace()
 
-        # Register pages (only those the user has permission for).
-        # Order here determines sidebar order.
-        self._register_page("nav.check_in",       "checkin.title",   ScanScreen(),        "checkin")
-        self._register_page("nav.manage_players", "players.title",   PlayerListScreen(),  "players.view")
-        self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(),   "financials.view")
-        self._register_page("nav.activities", "activities.title", ActivitiesScreen(), "activities.manage")
-        self._register_page("nav.users",          "users.title",   UsersScreen(),     "users.manage")
-        self._register_page("nav.expenses", "expenses.title", ExpensesScreen(), "expenses.manage")
-        self._register_page("nav.audit",          "audit.title",   AuditScreen(),     "audit.view")
+        # Pass `self` as parent so each screen is created as a child of
+        # this window, not as a brief top-level widget. Without this,
+        # Qt briefly realizes each screen as an OS-level window during
+        # construction and the theme sweep, which produces a burst of
+        # empty rectangles flashing on screen at startup.
+        self._register_page("nav.check_in",       "checkin.title",   ScanScreen(self),        "checkin")
+        self._register_page("nav.manage_players", "players.title",   PlayerListScreen(self),  "players.view")
+        self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(self),   "financials.view")
+        self._register_page("nav.activities", "activities.title", ActivitiesScreen(self), "activities.manage")
+        self._register_page("nav.users",          "users.title",   UsersScreen(self),     "users.manage")
+        self._register_page("nav.expenses", "expenses.title", ExpensesScreen(self), "expenses.manage")
+        self._register_page("nav.audit",          "audit.title",   AuditScreen(self),     "audit.view")
 
         # One signal drives everything.
         self.sidebar.on_change(self._on_nav_changed)
@@ -100,6 +103,25 @@ class MainWindow(QMainWindow):
 
         theme().on_change(lambda _m: self._restyle())
 
+        # Warm heavyweight imports (cv2, pyzbar) on a background thread
+        # ~2s after the window opens, so the first QR scan feels instant.
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(2000, self._warm_heavy_imports)
+
+    def _warm_heavy_imports(self):
+        """Import cv2 / pyzbar on a background thread so the first scan
+        doesn't pay the ~1s cold-import cost on the UI thread."""
+        import threading
+
+        def _warm():
+            try:
+                import cv2              # noqa: F401
+                from pyzbar import pyzbar  # noqa: F401
+            except Exception:
+                pass
+
+        threading.Thread(target=_warm, daemon=True).start()
+
     def _register_page(self, nav_key: str, title_key: str, page: QWidget,
                        permission: str):
         """
@@ -113,7 +135,10 @@ class MainWindow(QMainWindow):
         )
 
         if sidebar_index < 0:
-            # Permission denied — don't register the page at all
+            # Permission denied — don't register the page. Explicitly
+            # detach and schedule for deletion so it can't linger.
+            page.setParent(None)
+            page.deleteLater()
             return
 
         self.workspace.add_page(nav_key, t(title_key), page)

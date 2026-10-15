@@ -30,9 +30,16 @@ from ui.i18n import t
 class AuditScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
+        self._loaded = False
         self._build_ui()
-        self.refresh()
+        # Deferred to first show — see showEvent.
         self._init_theme()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self.refresh()
 
     # ---------- UI ----------
 

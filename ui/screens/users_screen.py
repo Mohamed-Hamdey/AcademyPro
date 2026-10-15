@@ -98,9 +98,16 @@ class UsersScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self._rows = []       # list of User in the current table order
+        self._loaded = False
         self._build_ui()
-        self.refresh()
+        # Deferred to first show — see showEvent.
         self._init_theme()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self.refresh()
 
     # ---------- construction ----------
 

@@ -5,7 +5,12 @@ PyInstaller spec for the Academy Membership System.
 Build with:
     python -m PyInstaller --clean --noconfirm academy_system.spec
 
-Output: dist/AcademySystem.exe (single file, Windows).
+Output: dist/AcademySystem/AcademySystem.exe (one-folder build).
+The folder is what the Inno Setup installer packages.
+
+One-folder (not one-file) is a deliberate choice: a one-file build
+self-extracts to a temp dir on every launch, which adds 3-8 seconds
+to startup. One-folder launches in under a second after the first run.
 """
 
 import os
@@ -64,7 +69,6 @@ hiddenimports = [
     "cryptography.hazmat.primitives.asymmetric.ed25519",
     "cryptography.hazmat.primitives.serialization",
 ]
-hiddenimports += collect_submodules("cv2")
 hiddenimports += collect_submodules("pyzbar")
 
 
@@ -125,13 +129,12 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="AcademySystem",
     debug=False,
     bootloader_ignore_signals=False,
@@ -139,12 +142,24 @@ exe = EXE(
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,          # no terminal window
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # If you have assets/logo/logo.ico, uncomment this line:
-    icon=os.path.join(project_root, "assets", "logo", "logo.ico"),
+    icon=os.path.join(
+        project_root, "assets", "logo", "logo.ico"
+    ),
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="AcademySystem",
 )

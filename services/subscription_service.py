@@ -139,7 +139,59 @@ def get_active(player_id: int) -> "Subscription | None":
     subs = get_all_active(player_id)
     return subs[0] if subs else None
 
+def get_display_status_bulk(player_ids: list[int]) -> dict[int, dict]:
+    """
+    Batched version of get_display_status. One DB call for many players.
+    Applies the same lazy-expiry logic and returns the same shape per player.
+    """
+    from datetime import date as _date
+    subs_map = subscriptions_repo.get_all_active_for_players(player_ids)
+    today = _date.today()
+    result = {}
 
+    for pid in player_ids:
+        subs = subs_map.get(pid, [])
+        # Apply lazy expiry
+        valid = []
+        for s in subs:
+            exp = _date.fromisoformat(s.expiry_date)
+            if today >= exp:
+                subscriptions_repo.set_status(s.subscription_id, "expired")
+                continue
+            valid.append(s)
+
+        if valid:
+            result[pid] = {
+                "status": "active",
+                "subscription_id": valid[0].subscription_id,
+                "plan_type": valid[0].plan_type,
+                "sessions_remaining": sum(s.sessions_remaining for s in valid),
+                "sessions_total": sum(s.sessions_total for s in valid),
+                "expiry_date": max(s.expiry_date for s in valid),
+                "active_count": len(valid),
+            }
+        else:
+            # Fall back to the latest historical sub.
+            hist = subscriptions_repo.get_history_for_player(pid)
+            if hist:
+                latest = hist[0]
+                result[pid] = {
+                    "status": latest.status,
+                    "subscription_id": latest.subscription_id,
+                    "plan_type": latest.plan_type,
+                    "sessions_remaining": latest.sessions_remaining,
+                    "sessions_total": latest.sessions_total,
+                    "expiry_date": latest.expiry_date,
+                    "active_count": 0,
+                }
+            else:
+                result[pid] = {
+                    "status": "none", "subscription_id": None,
+                    "plan_type": None, "sessions_remaining": None,
+                    "sessions_total": None, "expiry_date": None,
+                    "active_count": 0,
+                }
+    return result
 def get_all_active(player_id: int) -> list[Subscription]:
     """
     Every currently-valid active subscription for a player.

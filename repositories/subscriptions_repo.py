@@ -105,7 +105,32 @@ def get_active_for_player(player_id: int) -> Optional[Subscription]:
     finally:
         conn.close()
 
+def get_all_active_for_players(player_ids: list[int]) -> dict[int, list[Subscription]]:
+    """
+    Batch version of get_all_active_for_player — one query for many players.
+    Returns a dict {player_id: [Subscription, ...]}.
+    """
+    if not player_ids:
+        return {}
+    conn = get_connection()
+    try:
+        placeholders = ",".join("?" * len(player_ids))
+        rows = conn.execute(
+            f"""
+            SELECT * FROM subscriptions
+            WHERE player_id IN ({placeholders}) AND status = 'active'
+            ORDER BY start_date DESC, subscription_id DESC
+            """,
+            player_ids,
+        ).fetchall()
+    finally:
+        conn.close()
 
+    result = {pid: [] for pid in player_ids}
+    for r in rows:
+        s = Subscription.from_row(r)
+        result.setdefault(s.player_id, []).append(s)
+    return result
 def get_history_for_player(player_id: int) -> list[Subscription]:
     conn = get_connection()
     try:

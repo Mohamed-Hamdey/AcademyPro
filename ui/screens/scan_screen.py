@@ -59,17 +59,23 @@ class ScanScreen(ThemedWidget, QWidget):
         self._recent_timer.setInterval(REFRESH_INTERVAL_MS)
 
         self._recent_rows = []       # cached rows for context-menu lookups
+        self._loaded = False
 
         self._build_ui()
-        self._refresh_recent_checkins()
+        # NOTE: don't call _refresh_recent_checkins() here. It runs on
+        # first show instead (see showEvent) to speed up MainWindow
+        # construction — this screen is eagerly built even when the
+        # user never opens it.
         self._init_theme()
 
     # ---------- show/hide handling for the refresh timer ----------
 
     def showEvent(self, event):
         super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self._refresh_recent_checkins()
         self._recent_timer.start()
-        self._refresh_recent_checkins()
 
     def hideEvent(self, event):
         self._recent_timer.stop()

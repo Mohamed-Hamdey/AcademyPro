@@ -41,9 +41,16 @@ class ExpensesScreen(ThemedWidget, QWidget):
         self._selected_year = date.today().year
         self._selected_month = date.today().month
         self._rows = []
+        self._loaded = False
         self._build_ui()
-        self.refresh()
+        # Deferred to first show — see showEvent.
         self._init_theme()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self.refresh()
 
     # ---------- UI ----------
 

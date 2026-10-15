@@ -51,9 +51,19 @@ class SectionCard(QFrame):
         self.setObjectName("sectionCard")
         self._title_text = title
         self._subtitle_text = subtitle
+        self._styled = False
         self._build_ui()
         theme().on_change(lambda _m: self._restyle())
-        self._restyle()
+        if self.parent() is not None:
+            self._restyle()
+            self._styled = True
+        # else: style will be applied on first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._styled:
+            self._restyle()
+            self._styled = True
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
@@ -76,8 +86,8 @@ class SectionCard(QFrame):
         header_layout.addWidget(self.title_label)
         header_layout.addWidget(self.subtitle_label)
 
-        self.header.setVisible(bool(self._title_text) or bool(self._subtitle_text))
         outer.addWidget(self.header)
+        self.header.setVisible(bool(self._title_text) or bool(self._subtitle_text))
 
         self.body = QVBoxLayout()
         self.body.setContentsMargins(0, 0, 0, 0)
@@ -170,9 +180,19 @@ class KpiCard(QFrame):
     def __init__(self, title: str, value: str = "0", subtitle: str = "", parent=None):
         super().__init__(parent)
         self.setObjectName("kpiCard")
+        self._styled = False
         self._build_ui(title, value, subtitle)
         theme().on_change(lambda _m: self._restyle())
-        self._restyle()
+        if self.parent() is not None:
+            self._restyle()
+            self._styled = True
+        # else: style will be applied on first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._styled:
+            self._restyle()
+            self._styled = True
 
     def _build_ui(self, title, value, subtitle):
         layout = QVBoxLayout(self)
@@ -263,8 +283,18 @@ class EmptyState(QWidget):
             self.action_button.clicked.connect(on_action)
             layout.addWidget(self.action_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        self._styled = False
         theme().on_change(lambda _m: self._restyle())
-        self._restyle()
+        if self.parent() is not None:
+            self._restyle()
+            self._styled = True
+        # else: style will be applied on first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._styled:
+            self._restyle()
+            self._styled = True
 
     def _restyle(self):
         tm = theme()
@@ -318,9 +348,19 @@ class Pill(QLabel):
     def __init__(self, text: str = "", kind: str = "neutral", parent=None):
         super().__init__(text, parent)
         self._kind = kind
+        self._styled = False
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         theme().on_change(lambda _m: self._restyle())
-        self._restyle()
+        if self.parent() is not None:
+            self._restyle()
+            self._styled = True
+        # else: style will be applied on first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._styled:
+            self._restyle()
+            self._styled = True
 
     def set_status(self, text: str, kind: str):
         self._kind = kind
@@ -414,7 +454,17 @@ class BarList(QWidget, ThemedWidget):
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(SPACING["sm"])
-        self._init_theme()
+        self._styled = False
+        if self.parent() is not None:
+            self._init_theme()
+            self._styled = True
+        # else: style will be applied on first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._styled:
+            self._init_theme()
+            self._styled = True
 
     def set_data(self, rows: list):
         self._rows = sorted(rows, key=lambda r: r.get("value", 0), reverse=True)
@@ -584,7 +634,17 @@ class ComboBarChart(QWidget, ThemedWidget):
         self._layout.setContentsMargins(0, 8, 0, 0)
         self._layout.setSpacing(SPACING["sm"])
         self.setMinimumHeight(height + 42)
-        self._init_theme()
+        self._styled = False
+        if self.parent() is not None:
+            self._init_theme()
+            self._styled = True
+        # else: style will be applied on first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._styled:
+            self._init_theme()
+            self._styled = True
 
     # ------------------------------------------------------------------
     # Public API

@@ -54,9 +54,16 @@ class DashboardScreen(ThemedWidget, QWidget):
         self._week_rows = []
         self._sport_filter_id = None
         self._method_filter = None
+        self._loaded = False
         self._build_ui()
-        self.refresh()
+        # Deferred to first show — see showEvent.
         self._init_theme()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._loaded:
+            self._loaded = True
+            self.refresh()
 
     # ---------- UI ----------
 
