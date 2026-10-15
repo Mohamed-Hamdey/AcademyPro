@@ -88,9 +88,9 @@ class ExpensesScreen(ThemedWidget, QWidget):
         # KPI cards
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(SPACING["md"])
-        self.total_card = KpiCard(t("expenses.kpi.total"), "0")
-        self.count_card = KpiCard(t("expenses.kpi.count"), "0")
-        self.top_card   = KpiCard(t("expenses.kpi.top_category"), "—")
+        self.total_card = KpiCard(t("expenses.kpi.total"), "0", value_color="danger")
+        self.count_card = KpiCard(t("expenses.kpi.count"), "0", value_color="text")
+        self.top_card   = KpiCard(t("expenses.kpi.top_category"), "—", value_color="warning")
         for c in (self.total_card, self.count_card, self.top_card):
             kpi_row.addWidget(c, stretch=1)
         root.addLayout(kpi_row)
@@ -170,9 +170,7 @@ class ExpensesScreen(ThemedWidget, QWidget):
 
     def restyle(self):
         tm = theme()
-        self._style_kpi(self.total_card, tm.color("danger"))
-        self._style_kpi(self.count_card, tm.color("text"))
-        self._style_kpi(self.top_card,   tm.color("warning"))
+
         if self._rows is not None:
             self._render()
 

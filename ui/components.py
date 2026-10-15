@@ -177,16 +177,22 @@ class KpiCard(QFrame):
         card.set_value("1,400 EGP")
     """
 
-    def __init__(self, title: str, value: str = "0", subtitle: str = "", parent=None):
+    def __init__(self, title: str, value: str = "0", subtitle: str = "",
+                parent=None, value_color: str = None):
+        """
+        value_color: optional theme token name (e.g. "success", "danger",
+        "primary") for the big value label. When None, the value uses the
+        default "text" token.
+        """
         super().__init__(parent)
         self.setObjectName("kpiCard")
+        self._value_color = value_color
         self._styled = False
         self._build_ui(title, value, subtitle)
         theme().on_change(lambda _m: self._restyle())
         if self.parent() is not None:
             self._restyle()
             self._styled = True
-        # else: style will be applied on first show
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -237,9 +243,10 @@ class KpiCard(QFrame):
             f"  font-weight: 600;"
             f"}}"
         )
+        value_color = tm.color(self._value_color) if self._value_color else tm.color("text")
         self.value_label.setStyleSheet(
             f"QLabel#kpiValue {{"
-            f"  color: {tm.color('text')};"
+            f"  color: {value_color};"
             f"  background-color: transparent;"
             f"  font-size: 22px;"
             f"  font-weight: 700;"

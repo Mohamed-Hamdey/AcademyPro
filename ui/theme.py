@@ -599,10 +599,24 @@ class ThemeManager(QObject):
     def set_mode(self, mode: str, app: Optional[QApplication] = None):
         if mode not in _PALETTES or mode == self._mode:
             return
+
+        app = app or QApplication.instance()
+
+        # Freeze repaints on every visible top-level window while we
+        # re-style everything, so the switch happens in one visual
+        # frame instead of component-by-component.
+        tops = []
+        if app is not None:
+            tops = [w for w in app.topLevelWidgets() if w.isVisible()]
+            for w in tops:
+                try:
+                    w.setUpdatesEnabled(False)
+                except Exception:
+                    pass
+
         self._mode = mode
         QSettings(_SETTINGS_ORG, _SETTINGS_APP).setValue("mode", mode)
 
-        app = app or QApplication.instance()
         if app is not None:
             self.apply(app)
 
@@ -613,40 +627,29 @@ class ThemeManager(QObject):
             except Exception:
                 pass
 
-    def toggle(self, app: Optional[QApplication] = None):
-        self.set_mode("dark" if self._mode == "light" else "light", app=app)
-
-    def apply(self, app: QApplication):
-        # 1. Set the app-level palette and stylesheet
-        app.setPalette(self.build_palette())
-        app.setStyleSheet(build_stylesheet(self._mode))
-
-        # 2. Walk EVERY widget in the tree and force it to:
-        #    a) take the new palette from the app
-        #    b) unpolish/polish against the new stylesheet
-        #    c) repaint
-        #
-        # app.allWidgets() returns every QWidget Qt knows about, including
-        # ones nested deep inside dialogs, stacked widgets, tab pages, etc.
-        for w in app.allWidgets():
+        # Unfreeze and force a single repaint of every top-level.
+        for w in tops:
             try:
-                # Force the widget to use the app-level palette.
-                # Note: this clears any per-widget setPalette() call,
-                # which is exactly what we want on a theme flip.
-                w.setPalette(app.palette())
-                w.style().unpolish(w)
-                w.style().polish(w)
+                w.setUpdatesEnabled(True)
                 w.update()
             except Exception:
                 pass
 
-        # 3. Run the "call restyle() on anything that defines it" sweep
-        sweep_restyle()
+    def toggle(self, app: Optional[QApplication] = None):
+        self.set_mode("dark" if self._mode == "light" else "light", app=app)
 
-        # 4. Repaint top-level widgets (windows) so the changes take effect
-        for top in app.topLevelWidgets():
-            top.update()
-            top.repaint()
+    def apply(self, app: QApplication):
+        """
+        Apply the current theme.
+
+        Setting the app palette + stylesheet is enough — Qt
+        automatically re-polishes every widget on the next paint, and
+        every theme-reactive widget re-registers via theme().on_change.
+        Do NOT walk the widget tree manually: that forces a synchronous
+        polish per widget and is what made theme switching take seconds.
+        """
+        app.setPalette(self.build_palette())
+        app.setStyleSheet(build_stylesheet(self._mode))
 
     @staticmethod
     def _deep_repolish(widget):

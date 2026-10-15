@@ -147,10 +147,10 @@ class DashboardScreen(ThemedWidget, QWidget):
         # KPI row (with comparison badges)
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(SPACING["md"])
-        self.rev_card = KpiCard(t("dash.kpi.revenue"), "0")
-        self.exp_card = KpiCard(t("dash.kpi.expenses"), "0")
-        self.net_card = KpiCard(t("dash.kpi.net"), "0")
-        self.att_card = KpiCard(t("dash.kpi.attendance"), "0")
+        self.rev_card = KpiCard(t("dash.kpi.revenue"), "0", value_color="success")
+        self.exp_card = KpiCard(t("dash.kpi.expenses"), "0", value_color="danger")
+        self.net_card = KpiCard(t("dash.kpi.net"), "0", value_color="primary")
+        self.att_card = KpiCard(t("dash.kpi.attendance"), "0", value_color="text")
         for c in (self.rev_card, self.exp_card, self.net_card, self.att_card):
             kpi_row.addWidget(c, stretch=1)
         body.addLayout(kpi_row)
@@ -203,10 +203,10 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.sport_filter.currentIndexChanged.connect(self._on_filters_changed)
 
         self.method_filter = QComboBox()
-        self.method_filter.addItem(t("dash.payments.filter.all_methods"), None)
-        self.method_filter.addItem(t("dash.payments.method.cash"), "cash")
-        self.method_filter.addItem(t("dash.payments.method.transfer"), "transfer")
-        self.method_filter.addItem(t("dash.payments.method.other"), "other")
+        self.m_rev_card = KpiCard(t("dash.kpi.revenue"), "0", value_color="success")
+        self.m_exp_card = KpiCard(t("dash.kpi.expenses"), "0", value_color="danger")
+        self.m_net_card = KpiCard(t("dash.kpi.net"), "0", value_color="primary")
+        self.m_att_card = KpiCard(t("dash.kpi.attendance"), "0", value_color="text")
         self.method_filter.currentIndexChanged.connect(self._on_filters_changed)
 
         filters.addWidget(QLabel(t("dash.payments.filter.sport")))
@@ -349,10 +349,10 @@ class DashboardScreen(ThemedWidget, QWidget):
 
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(SPACING["md"])
-        self.m_rev_card = KpiCard(t("dash.kpi.revenue"), "0")
-        self.m_exp_card = KpiCard(t("dash.kpi.expenses"), "0")
-        self.m_net_card = KpiCard(t("dash.kpi.net"), "0")
-        self.m_att_card = KpiCard(t("dash.kpi.attendance"), "0")
+        self.m_rev_card = KpiCard(t("dash.kpi.revenue"), "0", value_color="success")
+        self.m_exp_card = KpiCard(t("dash.kpi.expenses"), "0", value_color="danger")
+        self.m_net_card = KpiCard(t("dash.kpi.net"), "0", value_color="primary")
+        self.m_att_card = KpiCard(t("dash.kpi.attendance"), "0", value_color="text")
         for c in (self.m_rev_card, self.m_exp_card, self.m_net_card, self.m_att_card):
             kpi_row.addWidget(c, stretch=1)
         body.addLayout(kpi_row)
@@ -392,14 +392,6 @@ class DashboardScreen(ThemedWidget, QWidget):
     def restyle(self):
         tm = theme()
 
-        self._style_kpi(self.rev_card,   tm.color("success"))
-        self._style_kpi(self.exp_card,   tm.color("danger"))
-        self._style_kpi(self.net_card,   tm.color("primary"))
-        self._style_kpi(self.att_card,   tm.color("text"))
-        self._style_kpi(self.m_rev_card, tm.color("success"))
-        self._style_kpi(self.m_exp_card, tm.color("danger"))
-        self._style_kpi(self.m_net_card, tm.color("primary"))
-        self._style_kpi(self.m_att_card, tm.color("text"))
 
         self.week_hint.setStyleSheet(
             f"QLabel {{"
