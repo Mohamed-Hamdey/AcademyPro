@@ -53,6 +53,16 @@ def _current_version(conn) -> int:
 
 def _discover_migrations() -> List[Tuple[int, str, str]]:
     migrations = []
+    # Defensive: if the migrations folder wasn't bundled (frozen build
+    # with a stale spec), don't crash — just log and return empty.
+    if not os.path.isdir(MIGRATIONS_DIR):
+        import logging
+        logging.getLogger(__name__).warning(
+            "Migrations folder not found at %s — skipping migrations",
+            MIGRATIONS_DIR,
+        )
+        return migrations
+
     for name in sorted(os.listdir(MIGRATIONS_DIR)):
         if not name.endswith(".py"):
             continue

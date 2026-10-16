@@ -1,0 +1,97 @@
+Academy System — End User License Agreement
+============================================
+
+Please read this agreement before installing the software.
+
+
+1. License Grant
+   The publisher grants you a non-exclusive, non-transferable license
+   to install and use this software on the computers owned or operated
+   by the licensed academy, for the academy's internal business
+   purposes only.
+
+2. Restrictions
+   You may not:
+     - Copy, distribute, sublicense, sell, or rent the software
+       to any third party.
+     - Reverse engineer, decompile, or disassemble the software.
+     - Remove or alter any copyright, trademark, or attribution notices.
+     - Use the software to provide a commercial service to third parties
+       without the publisher's written permission.
+
+3. Ownership
+   The software is licensed, not sold. All intellectual property rights
+   remain with the publisher.
+
+4. Data
+   All data you enter into the software (player records, payments,
+   attendance logs, etc.) belongs to you. The software stores it
+   locally on your computer. The publisher does not have access to
+   your data.
+
+5. No Warranty
+   The software is provided "as is", without warranty of any kind,
+   express or implied, including but not limited to the warranties of
+   merchantability, fitness for a particular purpose, and
+   non-infringement.
+
+6. Limitation of Liability
+   In no event shall the publisher be liable for any claim, damages,
+   or other liability arising from the use of the software.
+
+7. Termination
+   This license is effective until terminated. It terminates
+   automatically if you breach any of the terms above.
+
+8. Acceptance
+   By clicking "I accept" and installing the software, you agree to
+   be bound by the terms of this agreement.
+
+
+================================================================================
+اتفاقية ترخيص المستخدم النهائي — نظام الأكاديمية
+================================================================================
+
+يرجى قراءة هذه الاتفاقية قبل تثبيت البرنامج.
+
+
+1. منح الترخيص
+   يمنحكم الناشر ترخيصًا غير حصري وغير قابل للتحويل لتثبيت
+   واستخدام هذا البرنامج على الأجهزة المملوكة أو المُدارة من قِبل
+   الأكاديمية المرخّص لها، ولأغراض العمل الداخلية فقط.
+
+2. القيود
+   لا يجوز لكم:
+     - نسخ أو توزيع أو ترخيص من الباطن أو بيع أو تأجير البرنامج
+       لأي طرف ثالث.
+     - إجراء هندسة عكسية أو فك تجميع أو تفكيك البرنامج.
+     - إزالة أو تعديل أي إشعارات حقوق النشر أو العلامات التجارية
+       أو الإسناد.
+     - استخدام البرنامج لتقديم خدمة تجارية لأطراف ثالثة دون إذن
+       كتابي من الناشر.
+
+3. الملكية
+   البرنامج مُرخّص وليس مبيعًا. تظل جميع حقوق الملكية الفكرية
+   ملكًا للناشر.
+
+4. البيانات
+   جميع البيانات التي تُدخلها في البرنامج (سجلات اللاعبين،
+   المدفوعات، سجلات الحضور، إلخ) ملك لكم. يُخزّنها البرنامج
+   محليًا على جهازكم. لا يملك الناشر أي وصول إلى بياناتكم.
+
+5. إخلاء المسؤولية عن الضمانات
+   يُقدَّم البرنامج "كما هو"، دون أي ضمان من أي نوع، صريح أو
+   ضمني، بما في ذلك على سبيل المثال لا الحصر ضمانات القابلية
+   للتسويق والملاءمة لغرض معين وعدم الانتهاك.
+
+6. تحديد المسؤولية
+   لا يتحمل الناشر، في أي حال من الأحوال، أي مسؤولية عن أي مطالبة
+   أو أضرار تنشأ عن استخدام البرنامج.
+
+7. الإنهاء
+   يسري هذا الترخيص حتى إنهائه. يُنهى تلقائيًا إذا خالفتم أيًا من
+   الشروط المذكورة أعلاه.
+
+8. القبول
+   بالضغط على "أوافق" وتثبيت البرنامج، فإنكم توافقون على الالتزام
+   بشروط هذه الاتفاقية.

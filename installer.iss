@@ -20,13 +20,22 @@
 
 [Setup]
 ; ---- Identity ----
-AppId={{8F4C8A2E-1B7D-4C2A-9E5F-3A7B8C9D0E1F}
+AppId={{8F4C8A2E-1B7D-4C2A-9E5F-3A7B8C9D0E1F}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 VersionInfoVersion={#MyAppVersion}
+; ---- License agreement ----
+LicenseFile=installer\EULA.txt
 
+; ---- Uninstall ----
+UninstallDisplayName={#MyAppName}
+UninstallDisplayIcon={app}\{#MyAppExeName}
+
+; ---- Privileges ----
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
 ; ---- Install location ----
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
@@ -50,13 +59,9 @@ DisableWelcomePage=no
 DisableDirPage=no
 DisableReadyPage=no
 
-; ---- Uninstall: leave user data alone by default; we handle it via code ----
-UninstallDisplayName={#MyAppName}
-UninstallDisplayIcon={app}\{#MyAppExeName}
 
-; ---- Privileges: install for all users, needs admin ----
-PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=dialog
+
+
 
 [Languages]
 Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
@@ -80,7 +85,8 @@ Name: "startmenuicon"; Description: "Start Menu shortcut"; GroupDescription: "{c
 
 [Files]
 ; The main executable
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\AcademySystem\*"; DestDir: "{app}"; \
+    Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Documentation
 Source: "README.md";        DestDir: "{app}"; Flags: ignoreversion isreadme

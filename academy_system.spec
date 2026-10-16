@@ -32,8 +32,11 @@ datas = [
      os.path.join("license", "keys")),
     # Third-party license notices (viewed from the About dialog)
     (os.path.join(project_root, "LICENSES.txt"), "."),
+    # Migration files — the runner discovers them dynamically via
+    # os.listdir(), so they must exist on disk (not just as compiled
+    # modules) inside the frozen build.
+    (os.path.join(project_root, "migrations"), "migrations"),
 ]
-
 
 # ---------------------------------------------------------------------------
 # Binaries: libzbar-64.dll required by pyzbar at runtime
