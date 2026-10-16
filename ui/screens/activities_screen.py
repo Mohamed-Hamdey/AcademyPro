@@ -12,13 +12,13 @@ Manager-only. List of all activities, with:
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QLabel,
 )
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import activity_service

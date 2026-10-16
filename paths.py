@@ -22,6 +22,8 @@ Usage — prefer the named classmethods on AppPaths:
     db           = AppPaths.database()
     qr_folder    = AppPaths.qr_codes_dir()
     photo_folder = AppPaths.photos_dir()
+    logs         = AppPaths.logs_dir()
+    backups      = AppPaths.backups_dir()
 
 The lower-level functions (bundled_path, user_data_path, user_data_dir,
 user_data_root, project_root) are still exported for cases where a path
@@ -143,6 +145,16 @@ class AppPaths:
     @classmethod
     def database(cls) -> str:
         return user_data_path("academy.db")
+    
+    @classmethod
+    def logs_dir(cls) -> str:
+        """Directory for rotating log files. Created if it doesn't exist."""
+        return user_data_dir("logs")
+
+    @classmethod
+    def backups_dir(cls) -> str:
+        """Directory for automatic and manual database backups."""
+        return user_data_dir("backups")
 
     @classmethod
     def qr_codes_dir(cls) -> str:

@@ -20,10 +20,14 @@ IF NOT EXISTS / IF EXISTS liberally).
 import os
 import sys
 import importlib.util
+import logging
 from typing import List, Tuple
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from db.database import get_connection
+
+
+log = logging.getLogger(__name__)
 
 
 MIGRATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -81,27 +85,60 @@ def run_migrations() -> None:
         _ensure_version_table(conn)
         current = _current_version(conn)
 
+        # Collect the migrations that actually need to run.
+        pending = []
         for version, path, filename in _discover_migrations():
             if version <= current:
                 continue
+            pending.append((version, path, filename))
 
-            module = _load_module(path)
-            desc = getattr(module, "DESCRIPTION", filename)
-            up = getattr(module, "up", None)
-            if up is None:
-                raise RuntimeError(
-                    f"Migration {filename} doesn't define an up(conn) function"
-                )
-
-            print(f"[migrations] applying v{version}: {desc}")
-            up(conn)
-            conn.execute(
-                "INSERT INTO schema_version (version, description) VALUES (?, ?)",
-                (version, desc),
-            )
+        if not pending:
             conn.commit()
-            print(f"[migrations] v{version} applied")
+            return
+
+        # --- Pre-migration backup of the whole DB (only when needed) ---
+        # We snapshot once, before the first pending migration. If any
+        # migration in the batch fails, we restore that single snapshot.
+        from services import db_safety
+        first_version = pending[0][0]
+        snapshot_path = db_safety.take_pre_migration_snapshot(first_version)
+
+        try:
+            for version, path, filename in pending:
+                module = _load_module(path)
+                desc = getattr(module, "DESCRIPTION", filename)
+                up = getattr(module, "up", None)
+                if up is None:
+                    raise RuntimeError(
+                        f"Migration {filename} doesn't define an up(conn) function"
+                    )
+
+                log.info("Applying migration v%d: %s", version, desc)
+                up(conn)
+                conn.execute(
+                    "INSERT INTO schema_version (version, description) VALUES (?, ?)",
+                    (version, desc),
+                )
+                conn.commit()
+                log.info("Migration v%d applied", version)
+
+        except Exception:
+            # A migration failed. Close the connection, restore the
+            # snapshot, and re-raise so the caller can show a dialog.
+            log.exception("Migration failed — restoring pre-migration snapshot")
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+            if snapshot_path is not None:
+                db_safety.restore_pre_migration_snapshot(first_version)
+
+            raise
 
         conn.commit()
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass

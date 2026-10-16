@@ -16,13 +16,13 @@ import os
 import sys
 from ui.formatting import format_attendance_row, is_ar
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QListWidget, QListWidgetItem, QStackedWidget, QComboBox,
     QMenu,
 )
-from PyQt6.QtCore import Qt, QTimer, QPoint
-from PyQt6.QtGui import QImage, QPixmap, QColor, QAction
+from qtpy.QtCore import Qt, QTimer, QPoint
+from qtpy.QtGui import QImage, QPixmap, QColor, QAction
 
 from ui.message_box import warn
 from ui.formatting import format_attendance_row
@@ -546,7 +546,7 @@ class ScanScreen(ThemedWidget, QWidget):
     def _open_player(self, player_id: int):
         """Route to Manage Players → open this player's detail."""
         try:
-            from PyQt6.QtWidgets import QApplication
+            from qtpy.QtWidgets import QApplication
             app = QApplication.instance()
             if app is None:
                 return

@@ -1,0 +1,80 @@
+Academy Membership System — Third-Party Licenses
+================================================
+
+This application uses the following open-source libraries. Each is
+distributed under the license listed below. Full license texts are
+available at the URLs shown.
+
+ترخيص المكونات الخارجية — نظام عضوية الأكاديمية
+=================================================
+
+يستخدم هذا التطبيق المكتبات مفتوحة المصدر التالية، كل منها مرخّص وفقًا
+للترخيص المذكور. تتوفر نصوص التراخيص الكاملة على الروابط الموضحة.
+
+
+--------------------------------------------------------------------
+PySide6 (Qt for Python)
+--------------------------------------------------------------------
+License: GNU Lesser General Public License v3 (LGPL-3.0)
+         or GNU General Public License v2+ (GPL-2.0+)
+         or GNU General Public License v3 (GPL-3.0)
+Homepage: https://www.qt.io/qt-for-python
+Source:   https://code.qt.io/cgit/pyside/pyside-setup.git/
+Notes:    This application uses PySide6 under the terms of the LGPL-3.0.
+          As required by the LGPL, the user may replace the PySide6
+          library with a compatible version.
+
+
+--------------------------------------------------------------------
+Qt 6
+--------------------------------------------------------------------
+License: GNU Lesser General Public License v3 (LGPL-3.0)
+Homepage: https://www.qt.io
+Source:   https://code.qt.io/cgit/qt/
+
+
+--------------------------------------------------------------------
+QtPy
+--------------------------------------------------------------------
+License: MIT
+Homepage: https://github.com/spyder-ide/qtpy
+Source:   https://github.com/spyder-ide/qtpy
+
+
+--------------------------------------------------------------------
+opencv-python
+--------------------------------------------------------------------
+License: Apache License 2.0
+Homepage: https://github.com/opencv/opencv-python
+Source:   https://github.com/opencv/opencv-python
+
+
+--------------------------------------------------------------------
+pyzbar
+--------------------------------------------------------------------
+License: MIT
+Homepage: https://github.com/NaturalHistoryMuseum/pyzbar
+Source:   https://github.com/NaturalHistoryMuseum/pyzbar
+
+
+--------------------------------------------------------------------
+zbar (libzbar)
+--------------------------------------------------------------------
+License: GNU Lesser General Public License v2.1 (LGPL-2.1)
+Homepage: http://zbar.sourceforge.net/
+Source:   https://github.com/mchehab/zbar
+
+
+--------------------------------------------------------------------
+cryptography
+--------------------------------------------------------------------
+License: Apache License 2.0
+         or BSD 3-Clause License
+Homepage: https://github.com/pyca/cryptography
+Source:   https://github.com/pyca/cryptography
+
+
+====================================================================
+If you have any questions about these licenses, contact the
+application vendor.
+====================================================================

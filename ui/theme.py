@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QObject, QSettings, pyqtSignal, QEasingCurve, QPropertyAnimation
-from PyQt6.QtGui import QPalette, QColor
-from PyQt6.QtWidgets import (
+from qtpy.QtCore import QObject, QSettings, Signal, QEasingCurve, QPropertyAnimation
+from qtpy.QtGui import QPalette, QColor
+from qtpy.QtWidgets import (
     QApplication, QPushButton, QWidget, QGraphicsOpacityEffect,
     QGroupBox, QTabWidget, QTableWidget, QHeaderView,
 )
@@ -550,7 +550,7 @@ _PALETTES = {"light": LIGHT, "dark": DARK}
 
 
 class ThemeManager(QObject):
-    theme_changed = pyqtSignal(str)
+    theme_changed = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -754,7 +754,7 @@ class ThemedWidget:
             pass
 
         try:
-            from PyQt6.QtWidgets import QDialog
+            from qtpy.QtWidgets import QDialog
             if isinstance(self, QDialog):
                 self.setStyleSheet(
                     f"QDialog {{ background-color: {theme().color('bg')}; }}"
@@ -775,7 +775,7 @@ class ThemedWidget:
 
     def _on_theme_change(self, _mode):
         try:
-            from PyQt6.QtWidgets import QDialog
+            from qtpy.QtWidgets import QDialog
             if isinstance(self, QDialog):
                 self.setStyleSheet(
                     f"QDialog {{ background-color: {theme().color('bg')}; }}"

@@ -16,9 +16,9 @@ import sys
 from datetime import date, datetime
 from collections import OrderedDict
 
-from PyQt6.QtGui import QTextDocument, QPageSize, QPageLayout
-from PyQt6.QtCore import QMarginsF
-from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
+from qtpy.QtGui import QTextDocument, QPageSize, QPageLayout
+from qtpy.QtCore import QMarginsF
+from qtpy.QtPrintSupport import QPrinter, QPrintDialog
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config.config_loader import get_academy_name, load_config, get_plan_label

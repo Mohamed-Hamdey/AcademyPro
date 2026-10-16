@@ -18,12 +18,12 @@ import os
 import sys
 from datetime import date
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QDoubleSpinBox,
     QDateEdit, QPushButton, QHBoxLayout, QLabel, QSpinBox, QCheckBox,
     QWidget, QGridLayout,
 )
-from PyQt6.QtCore import QDate
+from qtpy.QtCore import QDate
 from ui.message_box import ask
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))

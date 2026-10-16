@@ -14,9 +14,9 @@ Usage in main.py:
 
 import os
 
-from PyQt6.QtCore import Qt, QRect
-from PyQt6.QtGui import QPixmap, QPainter, QColor, QFont
-from PyQt6.QtWidgets import QSplashScreen
+from qtpy.QtCore import Qt, QRect
+from qtpy.QtGui import QPixmap, QPainter, QColor, QFont
+from qtpy.QtWidgets import QSplashScreen
 
 from paths import AppPaths
 
@@ -129,7 +129,7 @@ def show_splash() -> QSplashScreen:
     splash.show()
     # Force an immediate paint so the splash is visible during the
     # first slow import.
-    from PyQt6.QtWidgets import QApplication
+    from qtpy.QtWidgets import QApplication
     QApplication.processEvents()
     return splash
 

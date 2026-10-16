@@ -10,14 +10,14 @@ import sys
 import calendar
 from datetime import date
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QScrollArea,
     QFrame,
 )
 from ui.components import SectionCard, Toolbar, EmptyState, KpiCard, BarList
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import expense_service

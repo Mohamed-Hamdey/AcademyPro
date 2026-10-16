@@ -20,13 +20,13 @@ shows it (see ui/main_window.py + ui/shell.py).
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QStackedWidget,
     QComboBox, QLabel,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import load_config, get_plan_label

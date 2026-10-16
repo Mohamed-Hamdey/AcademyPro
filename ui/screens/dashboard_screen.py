@@ -7,13 +7,13 @@ import sys
 from datetime import date, timedelta
 
 from services import dashboard_service, activity_service, dashboard_pdf
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QScrollArea, QFrame, QTabWidget, QDateEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QLineEdit,
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QColor
+from qtpy.QtCore import Qt, QDate
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import dashboard_service, activity_service

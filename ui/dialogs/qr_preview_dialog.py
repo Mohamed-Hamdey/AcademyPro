@@ -4,12 +4,12 @@ import os
 import sys
 import shutil
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFileDialog,
     QFrame,
 )
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt
+from qtpy.QtGui import QPixmap
+from qtpy.QtCore import Qt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from ui.message_box import info

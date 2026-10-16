@@ -2,11 +2,11 @@
 
 from datetime import date
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QDoubleSpinBox, QDateEdit,
     QPushButton, QHBoxLayout, QLabel,
 )
-from PyQt6.QtCore import QDate
+from qtpy.QtCore import QDate
 
 from ui.theme import theme, ThemedWidget, make_secondary
 from ui.design import SPACING

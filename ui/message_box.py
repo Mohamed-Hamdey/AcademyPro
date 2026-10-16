@@ -17,10 +17,10 @@ mode automatically. Same API as the QMessageBox calls they replace:
         ...
 """
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
 )
-from PyQt6.QtCore import Qt
+from qtpy.QtCore import Qt
 
 from ui.theme import theme, ThemedWidget, make_secondary, make_danger
 from ui.i18n import t

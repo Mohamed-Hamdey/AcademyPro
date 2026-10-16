@@ -6,11 +6,11 @@ import os
 import sys
 from datetime import date
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit,
     QDoubleSpinBox, QDateEdit, QPushButton, QHBoxLayout, QLabel,
 )
-from PyQt6.QtCore import QDate
+from qtpy.QtCore import QDate
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import expense_service

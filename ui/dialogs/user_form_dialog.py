@@ -13,11 +13,11 @@ Safety checks live here for the "last manager" constraints.
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QComboBox, QPushButton,
     QHBoxLayout, QLabel, QFileDialog, QCheckBox, QMessageBox,
 )
-from PyQt6.QtCore import Qt
+from qtpy.QtCore import Qt
 from services import audit_service
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from repositories import users_repo

@@ -8,12 +8,12 @@ authentication, stores the user in `app_state.app` and accepts.
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QFrame,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QPixmap
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_academy_name, get_academy_logo, load_config

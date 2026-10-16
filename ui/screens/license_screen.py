@@ -9,12 +9,12 @@ file to proceed.
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QFileDialog, QApplication,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap, QGuiApplication
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QPixmap, QGuiApplication
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_academy_name, get_academy_logo, load_config
@@ -236,7 +236,7 @@ class LicenseScreen(ThemedWidget, QDialog):
         QApplication.clipboard().setText(self._status.machine_id)
         # Small visual feedback
         self.copy_button.setText(t("license.copied"))
-        from PyQt6.QtCore import QTimer
+        from qtpy.QtCore import QTimer
         QTimer.singleShot(1500, lambda: self.copy_button.setText(
             t("license.copy_machine_id")
         ))

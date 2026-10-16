@@ -17,12 +17,12 @@ Features:
 
 from datetime import date
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QListWidget, QListWidgetItem, QComboBox, QDateEdit, QMenu, QApplication,
 )
-from PyQt6.QtCore import Qt, QDate, QTimer, QPoint
-from PyQt6.QtGui import QColor, QAction
+from qtpy.QtCore import Qt, QDate, QTimer, QPoint
+from qtpy.QtGui import QColor, QAction
 
 from repositories import attendance_repo
 from services import activity_service, attendance_service

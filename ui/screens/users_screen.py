@@ -16,13 +16,13 @@ Safety rules enforced here:
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QLabel,
 )
 from ui.message_box import warn, ask
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap, QColor, QPainter, QBrush, QFont, QIcon
+from qtpy.QtCore import Qt, QSize
+from qtpy.QtGui import QPixmap, QColor, QPainter, QBrush, QFont, QIcon
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from repositories import users_repo

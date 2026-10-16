@@ -3,11 +3,11 @@
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QComboBox,
     QDateEdit, QPushButton, QHBoxLayout, QFileDialog, QLabel,
 )
-from PyQt6.QtCore import QDate
+from qtpy.QtCore import QDate
 
 from ui.message_box import warn, error
 from services import audit_service

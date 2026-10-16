@@ -21,10 +21,10 @@ ui/widgets.py so old screens keep working during the migration.
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from qtpy.QtCore import Qt, Signal
 
 from ui.i18n import t
 
@@ -626,7 +626,7 @@ class ComboBarChart(QWidget, ThemedWidget):
         ]
     """
 
-    slotClicked = pyqtSignal(object)
+    slotClicked = Signal(object)
 
     def __init__(self, height: int = 130, series_labels=None,
                  series_colors=None, show_net_line: bool = False,

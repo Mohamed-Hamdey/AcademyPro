@@ -11,11 +11,11 @@ Fields:
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton,
     QHBoxLayout, QLabel, QCheckBox, QWidget, QGridLayout, QColorDialog,
 )
-from PyQt6.QtGui import QColor
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import activity_service

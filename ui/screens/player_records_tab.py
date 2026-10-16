@@ -19,12 +19,12 @@ import calendar
 from datetime import date, datetime, timedelta
 from collections import OrderedDict
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QComboBox,
     QFrame, QPushButton, QListWidget, QListWidgetItem,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_plan_label

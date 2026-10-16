@@ -10,13 +10,13 @@ import sys
 import shutil
 from datetime import date
 from ui.screens.player_records_tab import PlayerRecordsTab
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit, QTabWidget, QFileDialog,
     QScrollArea, QFrame,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_plan_label

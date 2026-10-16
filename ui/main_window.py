@@ -12,10 +12,12 @@ import os
 import sys
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.expenses_screen import ExpensesScreen
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QDialog,
 )
-from PyQt6.QtCore import Qt
+from qtpy.QtCore import Qt, QSettings
+from qtpy.QtGui import QGuiApplication
+from qtpy.QtCore import Qt
 from ui.screens.activities_screen import ActivitiesScreen
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from ui.screens.scan_screen import ScanScreen
@@ -47,6 +49,9 @@ class MainWindow(QMainWindow):
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
 
+        # ---- restore saved geometry, if any ----
+        self._restore_geometry()
+
         # Map of nav_key -> page widget, only for pages the user can see.
         self._pages_by_nav_key = {}
         # Ordered list of nav keys the user actually sees, for sidebar dispatch.
@@ -64,6 +69,9 @@ class MainWindow(QMainWindow):
         self.topbar = TopBar(
             on_logout=self._on_logout,
             on_toggle_sidebar=self._toggle_sidebar,
+            on_backup=self._on_backup_now,
+            on_restore=self._on_restore_backup,
+            on_about=self._on_about,
         )
         outer.addWidget(self.topbar)
         # ---- Body: sidebar + workspace ----
@@ -105,7 +113,7 @@ class MainWindow(QMainWindow):
 
         # Warm heavyweight imports (cv2, pyzbar) on a background thread
         # ~2s after the window opens, so the first QR scan feels instant.
-        from PyQt6.QtCore import QTimer
+        from qtpy.QtCore import QTimer
         QTimer.singleShot(2000, self._warm_heavy_imports)
 
     def _warm_heavy_imports(self):
@@ -166,6 +174,47 @@ class MainWindow(QMainWindow):
         # previous page — clear it before swapping pages.
         self.workspace.set_header_action(None)
         self.workspace.show_page_by_key(nav_key)
+        
+    def _on_backup_now(self):
+        """User asked for a manual backup from the top-bar menu."""
+        from services import backup_service
+        from ui.message_box import info, error
+        from ui.i18n import t
+
+        path = backup_service.create_backup(label="manual")
+        if path:
+            import os
+            info(
+                self,
+                t("backup.now.done_title"),
+                t("backup.now.done_msg", name=os.path.basename(path)),
+            )
+        else:
+            error(
+                self,
+                t("backup.now.failed_title"),
+                t("backup.now.failed_msg"),
+            )
+
+    def _on_restore_backup(self):
+        """User asked to restore a backup from the top-bar menu."""
+        from ui.dialogs.restore_backup_dialog import RestoreBackupDialog
+        from ui.message_box import ask
+        from ui.i18n import t
+
+        dlg = RestoreBackupDialog(parent=self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+
+        # The restore already happened inside the dialog. The running
+        # process now holds stale data — tell the user to restart.
+        from qtpy.QtWidgets import QApplication
+        QApplication.instance().quit()
+        
+    def _on_about(self):
+        from ui.dialogs.about_dialog import AboutDialog
+        dlg = AboutDialog(parent=self)
+        dlg.exec()
     def _toggle_sidebar(self):
         self.sidebar.toggle_collapsed()
     def _restyle(self):
@@ -175,7 +224,7 @@ class MainWindow(QMainWindow):
 
     def _on_logout(self):
         """Clear the session and return to the login dialog."""
-        from PyQt6.QtWidgets import QApplication
+        from qtpy.QtWidgets import QApplication
 
         # Audit the logout BEFORE clearing app_state — otherwise the
         # record falls through to "system".
@@ -203,8 +252,8 @@ class MainWindow(QMainWindow):
     # ---------- language switch ----------
 
     def _switch_language(self):
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtCore import QSettings
+        from qtpy.QtWidgets import QApplication
+        from qtpy.QtCore import QSettings
         from ui import i18n
 
         current = i18n.current_language()
@@ -234,4 +283,56 @@ class MainWindow(QMainWindow):
                 scan.stop_camera()
         except Exception:
             pass
+        # ---- save window geometry ----
+        try:
+            self._save_geometry()
+        except Exception:
+            pass
         super().closeEvent(event)
+
+    # ---------- window geometry ----------
+
+    _GEOM_ORG = "MembershipSystem"
+    _GEOM_APP = "app"
+    _GEOM_KEY = "window/geometry"
+
+    def _save_geometry(self):
+        s = QSettings(self._GEOM_ORG, self._GEOM_APP)
+        s.setValue(self._GEOM_KEY, self.saveGeometry())
+        s.sync()
+
+    def _restore_geometry(self):
+        """
+        Restore saved window geometry, if any. If the saved geometry
+        would put the window off-screen (e.g. monitor was unplugged),
+        fall back to the default size and center on the primary screen.
+        """
+        s = QSettings(self._GEOM_ORG, self._GEOM_APP)
+        blob = s.value(self._GEOM_KEY, None)
+        if blob is None:
+            return
+
+        try:
+            restored = self.restoreGeometry(blob)
+        except Exception:
+            return
+        if not restored:
+            return
+
+        # Sanity check: is the window actually on-screen?
+        try:
+            geo = self.frameGeometry()
+            screens = QGuiApplication.screens()
+            for screen in screens:
+                if screen.availableGeometry().intersects(geo):
+                    return   # good enough — window is at least partly visible
+            # Off-screen: reset to defaults, centered.
+            self.resize(1100, 720)
+            primary = QGuiApplication.primaryScreen()
+            if primary is not None:
+                avail = primary.availableGeometry()
+                x = avail.x() + (avail.width() - 1100) // 2
+                y = avail.y() + (avail.height() - 720) // 2
+                self.move(x, y)
+        except Exception:
+            pass

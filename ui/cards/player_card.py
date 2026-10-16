@@ -18,11 +18,11 @@ the card shows the subscription status pill on the detail screen.
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QHBoxLayout, QGridLayout, QLabel, QFrame,
 )
-from PyQt6.QtGui import QPixmap, QColor, QPainter, QBrush
-from PyQt6.QtCore import Qt
+from qtpy.QtGui import QPixmap, QColor, QPainter, QBrush
+from qtpy.QtCore import Qt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_plan_label

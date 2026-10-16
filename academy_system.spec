@@ -14,25 +14,26 @@ to startup. One-folder launches in under a second after the first run.
 """
 
 import os
-import sys
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 project_root = os.path.abspath(os.path.dirname(SPEC))
 
 
 # ---------------------------------------------------------------------------
-# Data files: read-only resources bundled INTO the .exe
+# Data files: read-only resources bundled INTO the app folder
 # ---------------------------------------------------------------------------
 datas = [
     (os.path.join(project_root, "config", "academy_config.json"), "config"),
     (os.path.join(project_root, "translations"), "translations"),
     (os.path.join(project_root, "assets", "logo"), os.path.join("assets", "logo")),
-    (os.path.join(project_root, "db", "schema.sql"), "db"),
     # Public key for license verification (private key never ships)
     (os.path.join(project_root, "license", "keys", "public_key.pem"),
      os.path.join("license", "keys")),
+    # Third-party license notices (viewed from the About dialog)
+    (os.path.join(project_root, "LICENSES.txt"), "."),
 ]
+
 
 # ---------------------------------------------------------------------------
 # Binaries: libzbar-64.dll required by pyzbar at runtime
@@ -59,16 +60,25 @@ else:
 # Hidden imports — modules that PyInstaller's static analyzer can't see
 # ---------------------------------------------------------------------------
 hiddenimports = [
+    # QR scanning
     "pyzbar.pyzbar",
-    "PyQt6.QtSvg",
-    "PyQt6.QtPrintSupport",
-    "PyQt6.QtCore",
-    "PyQt6.QtGui",
-    "PyQt6.QtWidgets",
+
+    # Qt modules that PySide6 loads lazily. PyInstaller's built-in
+    # PySide6 hook catches most of these, but listing them explicitly
+    # avoids "module not found" surprises on some machines.
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "PySide6.QtSvg",
+    "PySide6.QtPrintSupport",
+    "PySide6.QtNetwork",   # single-instance lock (QLocalServer)
+
+    # License verification
     "cryptography",
     "cryptography.hazmat.primitives.asymmetric.ed25519",
     "cryptography.hazmat.primitives.serialization",
 ]
+
 hiddenimports += collect_submodules("pyzbar")
 
 
@@ -99,6 +109,12 @@ a = Analysis(
         "PyQt5.QtWidgets",
         "PyQt5.QtSvg",
         "PyQt5.sip",
+        "PyQt6",
+        "PyQt6.QtCore",
+        "PyQt6.QtGui",
+        "PyQt6.QtWidgets",
+        "PyQt6.QtSvg",
+        "PyQt6.sip",
 
         # Scientific / ML libraries Anaconda ships that we don't use
         "tensorflow",

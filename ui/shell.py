@@ -14,12 +14,12 @@ Layout (RTL: sidebar on the right):
 import os
 import sys
 
-from PyQt6.QtWidgets import (
+from qtpy.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QMenu,
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap, QAction
+from qtpy.QtCore import Qt, QSize
+from qtpy.QtGui import QPixmap, QAction
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config.config_loader import get_academy_name, get_academy_logo, load_config
@@ -44,13 +44,18 @@ class TopBar(QWidget):
       * Theme toggle
     """
 
-    def __init__(self, on_logout=None, on_toggle_sidebar=None, parent=None):
+    def __init__(self, on_logout=None, on_toggle_sidebar=None,
+                 on_backup=None, on_restore=None, on_about=None,
+                 parent=None):
         super().__init__(parent)
         self.setObjectName("topBar")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedHeight(SHELL["topbar_height"])
         self._on_logout = on_logout
         self._on_toggle_sidebar = on_toggle_sidebar
+        self._on_backup = on_backup
+        self._on_restore = on_restore
+        self._on_about = on_about
         self._build_ui()
         theme().on_change(lambda _m: self.restyle())
         self.restyle()
@@ -149,6 +154,25 @@ class TopBar(QWidget):
             change_pw.triggered.connect(self._on_change_password)
             menu.addAction(change_pw)
 
+        # Backup / restore — manager-only. Receptionists shouldn't
+        # be able to swap the database out from under themselves.
+        if user is not None and app_state.can("settings.manage"):
+            menu.addSeparator()
+
+            backup_now = QAction(t("menu.backup_now"), self)
+            backup_now.triggered.connect(self._on_backup_now_clicked)
+            menu.addAction(backup_now)
+
+            restore = QAction(t("menu.restore_backup"), self)
+            restore.triggered.connect(self._on_restore_backup_clicked)
+            menu.addAction(restore)
+            
+        # About
+        about = QAction(t("menu.about"), self)
+        about.triggered.connect(self._on_about_clicked)
+        menu.addAction(about)
+
+        menu.addSeparator()
         # Logout
         logout = QAction(t("menu.logout"), self)
         logout.triggered.connect(self._on_logout_clicked)
@@ -156,6 +180,17 @@ class TopBar(QWidget):
 
         # Show the menu anchored to the button
         menu.exec(self.user_button.mapToGlobal(self.user_button.rect().bottomLeft()))
+    def _on_backup_now_clicked(self):
+        if self._on_backup is not None:
+            self._on_backup()
+
+    def _on_restore_backup_clicked(self):
+        if self._on_restore is not None:
+            self._on_restore()
+            
+    def _on_about_clicked(self):
+        if self._on_about is not None:
+            self._on_about()
     def _on_change_password(self):
         user = app_state.user
         if user is None:
@@ -167,6 +202,7 @@ class TopBar(QWidget):
     def _on_logout_clicked(self):
         if self._on_logout is not None:
             self._on_logout()
+
 
     def restyle(self):
         tm = theme()
@@ -214,7 +250,7 @@ class TopBar(QWidget):
             # Attach the user's avatar as an icon (photo or initial)
             try:
                 from ui.screens.users_screen import _avatar_pixmap
-                from PyQt6.QtGui import QIcon
+                from qtpy.QtGui import QIcon
                 self.user_button.setIcon(QIcon(_avatar_pixmap(user)))
                 self.user_button.setIconSize(self.user_button.iconSize())
             except Exception:
