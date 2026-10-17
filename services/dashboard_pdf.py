@@ -64,7 +64,7 @@ def _print_html(parent_widget, html: str, title: str):
     if dlg.exec() != QPrintDialog.DialogCode.Accepted:
         return
 
-    doc.print(printer)
+    doc.print_(printer)
 
 
 # ---------------------------------------------------------------------------

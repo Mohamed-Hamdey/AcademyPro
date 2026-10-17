@@ -9,7 +9,7 @@ font size. Instead, ask `tokens` for it:
 
     tokens.color("primary")        # → "#2563EB" (light) / "#60A5FA" (dark)
     tokens.space("lg")             # → 16
-    tokens.radius("card")          # → 12
+    tokens.radius("lg")          # → 12
     tokens.font_family()           # → "Segoe UI Variable"
 
 The `tokens.color()` function reads the current theme mode via

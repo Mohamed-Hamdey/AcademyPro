@@ -719,27 +719,9 @@ def theme() -> ThemeManager:
 # Sweep
 # ---------------------------------------------------------------------------
 
-def sweep_restyle():
-    app = QApplication.instance()
-    if app is None:
-        return
-    seen = set()
-    for top in app.topLevelWidgets():
-        _maybe_restyle(top, seen)
-        for w in top.findChildren(object):
-            _maybe_restyle(w, seen)
 
 
-def _maybe_restyle(widget, seen):
-    if id(widget) in seen:
-        return
-    seen.add(id(widget))
-    fn = getattr(widget, "restyle", None)
-    if callable(fn):
-        try:
-            fn()
-        except Exception:
-            pass
+
 
 
 # ---------------------------------------------------------------------------

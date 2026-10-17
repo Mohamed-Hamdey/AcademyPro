@@ -14,7 +14,7 @@ from qtpy.QtWidgets import (
 )
 from qtpy.QtCore import Qt, QDate
 from qtpy.QtGui import QColor
-
+from ui.styles import week_hint_label, payments_total_label,recon_label,badge_label
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import dashboard_service, activity_service
 from ui.components import (
@@ -203,10 +203,10 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.sport_filter.currentIndexChanged.connect(self._on_filters_changed)
 
         self.method_filter = QComboBox()
-        self.m_rev_card = KpiCard(t("dash.kpi.revenue"), "0", value_color="success")
-        self.m_exp_card = KpiCard(t("dash.kpi.expenses"), "0", value_color="danger")
-        self.m_net_card = KpiCard(t("dash.kpi.net"), "0", value_color="primary")
-        self.m_att_card = KpiCard(t("dash.kpi.attendance"), "0", value_color="text")
+        self.method_filter.addItem(t("dash.payments.filter.all_methods"), None)
+        self.method_filter.addItem(t("dash.payments.method.cash"), "cash")
+        self.method_filter.addItem(t("dash.payments.method.transfer"), "transfer")
+        self.method_filter.addItem(t("dash.payments.method.other"), "other")
         self.method_filter.currentIndexChanged.connect(self._on_filters_changed)
 
         filters.addWidget(QLabel(t("dash.payments.filter.sport")))
@@ -390,42 +390,15 @@ class DashboardScreen(ThemedWidget, QWidget):
     # ---------- theming ----------
 
     def restyle(self):
-        tm = theme()
+        
 
-
-        self.week_hint.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {tm.color('text_secondary')};"
-            f"  background-color: transparent;"
-            f"  font-size: 12px;"
-            f"  padding: 0 0 6px 0;"
-            f"}}"
-        )
-        self.payments_total_label.setStyleSheet(
-            f"QLabel {{"
-            f"  color: {tm.color('text')};"
-            f"  background-color: transparent;"
-            f"  font-size: 14px;"
-            f"  font-weight: 700;"
-            f"  padding-top: 6px;"
-            f"}}"
-        )
+        self.week_hint.setStyleSheet(week_hint_label())
+        self.payments_total_label.setStyleSheet(payments_total_label())
 
         if self._summary is not None:
             self._render_day()
         if self._month_summary is not None:
             self._render_month()
-
-    @staticmethod
-    def _style_kpi(kpi, color):
-        kpi.value_label.setStyleSheet(
-            f"QLabel#kpiValue {{"
-            f"  color: {color};"
-            f"  background-color: transparent;"
-            f"  font-size: 22px;"
-            f"  font-weight: 700;"
-            f"}}"
-        )
 
     # ---------- date navigation ----------
 
@@ -465,20 +438,22 @@ class DashboardScreen(ThemedWidget, QWidget):
 
     def _on_print_day(self):
         """Print the currently-selected day as a PDF / hard copy."""
+        import logging
         try:
             dashboard_pdf.print_day(self, self._selected_date)
         except Exception as e:
-            print(f"[dashboard] print_day failed: {e}")
+            logging.getLogger(__name__).exception("print_day failed")
             from ui.message_box import warn
             warn(self, t("dash.print_dialog.day_title"), str(e))
 
     def _on_print_month(self):
         """Print the currently-selected month as a PDF / hard copy."""
+        import logging
         y, m = self._month_options[self.month_selector.currentIndex()]
         try:
             dashboard_pdf.print_month(self, y, m)
         except Exception as e:
-            print(f"[dashboard] print_month failed: {e}")
+            logging.getLogger(__name__).exception("print_month failed")
             from ui.message_box import warn
             warn(self, t("dash.print_dialog.month_title"), str(e))
     def _on_filters_changed(self, _idx):
@@ -575,15 +550,7 @@ class DashboardScreen(ThemedWidget, QWidget):
                     continue
                 arrow, text, color = result
                 lbl.setText(f"{arrow} {text}")
-                lbl.setStyleSheet(
-                    f"QLabel {{"
-                    f"  color: {color};"
-                    f"  background-color: transparent;"
-                    f"  font-size: 11px;"
-                    f"  font-weight: 600;"
-                    f"}}"
-                )
-
+                lbl.setStyleSheet(badge_label(color))
     def _render_reconciliation(self, recon: dict):
         tm = theme()
         cash = recon.get("cash_in", 0)
@@ -604,14 +571,7 @@ class DashboardScreen(ThemedWidget, QWidget):
             t("dash.reconcile.transfer", amount=f"{transfer:,.0f}")
         )
         for key, lbl in self._recon_labels.items():
-            lbl.setStyleSheet(
-                f"QLabel {{"
-                f"  color: {tm.color('text')};"
-                f"  background-color: transparent;"
-                f"  font-size: 13px;"
-                f"  padding: 4px 8px;"
-                f"}}"
-            )
+            lbl.setStyleSheet(recon_label())
 
     def _render_payments(self):
         try:

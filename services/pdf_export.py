@@ -54,8 +54,7 @@ def print_player_history(parent_widget, player, attendance, active_subs,
     if dlg.exec() != QPrintDialog.DialogCode.Accepted:
         return
 
-    doc.print(printer)
-
+    doc.print_(printer)
 
 # ---------------------------------------------------------------------------
 # HTML builder

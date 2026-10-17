@@ -10,12 +10,10 @@ Components:
     KpiCard       — compact metric card
     EmptyState    — centered empty-table/list placeholder
     Pill          — semantic status badge
-    PageHeader    — title + subtitle + action (rarely used directly)
+    BarList       — horizontal bars with labels and values
+    ComboBarChart — grouped bar chart with optional click-to-navigate
     Button factories: primary_button / secondary_button / ghost_button / danger_button
     hairline()    — themed divider
-
-Legacy names for v1 code (Card, StatusPill, StatCard) are aliased in
-ui/widgets.py so old screens keep working during the migration.
 """
 
 import os
@@ -595,13 +593,6 @@ class BarList(QWidget, ThemedWidget):
             self._layout.addWidget(row)
 
 
-# ===========================================================================
-# MiniBarChart — simple bar chart for daily values over a window
-# ===========================================================================
-
-# ===========================================================================
-# MiniBarChart — simple bar chart for daily values over a window
-# ===========================================================================
 
 # ===========================================================================
 # ComboBarChart — grouped bars + optional net line

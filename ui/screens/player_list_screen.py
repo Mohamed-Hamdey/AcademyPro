@@ -20,6 +20,8 @@ shows it (see ui/main_window.py + ui/shell.py).
 import os
 import sys
 
+from ui.table_helpers import make_standard_table
+
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QStackedWidget,
@@ -114,21 +116,17 @@ class PlayerListScreen(ThemedWidget, QWidget):
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.setSpacing(0)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels([
-            t("players.col.id"),
-            t("players.col.name"),
-            t("players.col.plan"),
-            t("players.col.sessions"),
-            t("players.col.status"),
-        ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.setShowGrid(False)
-        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table = make_standard_table(
+            headers=[
+                t("players.col.id"),
+                t("players.col.name"),
+                t("players.col.plan"),
+                t("players.col.sessions"),
+                t("players.col.status"),
+            ],
+            column_modes=["stretch"] * 5,   # all 5 columns stretch evenly
+            parent=self,
+        )
         self.table.cellDoubleClicked.connect(self._on_row_double_clicked)
         table_layout.addWidget(self.table)
 
