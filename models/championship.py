@@ -9,8 +9,9 @@ from typing import Optional
 @dataclass
 class Championship:
     championship_id: Optional[int]
-    name: str                  # <--- Replaces name_en and name_ar
+    name: str
     event_date: str
+    activity_id: Optional[int] = None
     location: Optional[str] = None
     entry_fee: float = 0.0
     notes: Optional[str] = None
@@ -22,8 +23,9 @@ class Championship:
         keys = row.keys()
         return cls(
             championship_id=row["championship_id"],
-            name=row["name"],  # <--- Read the new column
+            name=row["name"],
             event_date=row["event_date"],
+            activity_id=row["activity_id"] if "activity_id" in keys else None,
             location=row["location"],
             entry_fee=row["entry_fee"],
             notes=row["notes"],

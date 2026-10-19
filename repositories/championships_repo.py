@@ -15,10 +15,10 @@ def create_championship(champ: Championship) -> int:
     try:
         cur = conn.execute(
             """
-            INSERT INTO championships (name, event_date, location, entry_fee, notes)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO championships (name, event_date, activity_id, location, entry_fee, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (champ.name, champ.event_date, champ.location, champ.entry_fee, champ.notes)
+            (champ.name, champ.event_date, champ.activity_id, champ.location, champ.entry_fee, champ.notes)
         )
         conn.commit()
         return cur.lastrowid
@@ -28,13 +28,26 @@ def create_championship(champ: Championship) -> int:
 def update_championship(champ: Championship) -> None:
     conn = get_connection()
     try:
+        # Handle the cascading delete (Option B)
+        old_champ = get_championship(champ.championship_id)
+        if old_champ and old_champ.activity_id != champ.activity_id:
+            # Activity changed! Remove players who don't match the new activity
+            conn.execute("""
+                DELETE FROM championship_players 
+                WHERE championship_id = ? 
+                AND player_id NOT IN (
+                    SELECT player_id FROM subscriptions 
+                    WHERE activity_id = ? AND archived_at IS NULL
+                )
+            """, (champ.championship_id, champ.activity_id))
+
         conn.execute(
             """
             UPDATE championships 
-            SET name = ?, event_date = ?, location = ?, entry_fee = ?, notes = ?
+            SET name = ?, event_date = ?, activity_id = ?, location = ?, entry_fee = ?, notes = ?
             WHERE championship_id = ?
             """,
-            (champ.name, champ.event_date, champ.location, champ.entry_fee, champ.notes, champ.championship_id)
+            (champ.name, champ.event_date, champ.activity_id, champ.location, champ.entry_fee, champ.notes, champ.championship_id)
         )
         conn.commit()
     finally:
@@ -145,6 +158,24 @@ def list_participants(champ_id: int) -> list[dict]:
             ORDER BY p.full_name COLLATE NOCASE
             """,
             (champ_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+        
+        
+def get_player_championships(player_id: int) -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT cp.*, c.name as champ_name, c.event_date, c.location
+            FROM championship_players cp
+            JOIN championships c ON c.championship_id = cp.championship_id
+            WHERE cp.player_id = ?
+            ORDER BY c.event_date DESC
+            """,
+            (player_id,)
         ).fetchall()
         return [dict(r) for r in rows]
     finally:

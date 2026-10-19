@@ -8,7 +8,7 @@ from services import payment_service
 from datetime import date
 import logging
 
-def create_championship(name, event_date, location, entry_fee, notes) -> int:
+def create_championship(name, event_date, activity_id, location, entry_fee, notes) -> int:
     if not name:
         raise ValueError("Name is required.")
     if not event_date:
@@ -18,13 +18,14 @@ def create_championship(name, event_date, location, entry_fee, notes) -> int:
         championship_id=None,
         name=name,
         event_date=event_date,
+        activity_id=activity_id,
         location=location,
         entry_fee=entry_fee,
         notes=notes
     )
     return championships_repo.create_championship(champ)
 
-def update_championship(champ_id, name, event_date, location, entry_fee, notes) -> None:
+def update_championship(champ_id, name, event_date, activity_id, location, entry_fee, notes) -> None:
     if not name:
         raise ValueError("Name is required.")
         
@@ -32,6 +33,7 @@ def update_championship(champ_id, name, event_date, location, entry_fee, notes) 
         championship_id=champ_id,
         name=name,
         event_date=event_date,
+        activity_id=activity_id,
         location=location,
         entry_fee=entry_fee,
         notes=notes
@@ -70,9 +72,11 @@ def register_player(champ_id: int, player_id: int, weight: float, belt: str, not
                 amount=champ.entry_fee,
                 payment_date=date.fromisoformat(champ.event_date),
                 method="cash",
-                notes=f"Entry fee for {champ.name_en}"
+                notes=f"Entry fee for {champ.name}",   # ← FIX: was champ.name_en
             )
-        except Exception as e:
-            logging.getLogger(__name__).exception("Failed to record championship payment")
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to record championship payment"
+            )
 
     return p_id

@@ -56,6 +56,8 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             self.subs_table.setStyleSheet(selection_qss)
             self.users_table.setStyleSheet(selection_qss)
             self.acts_table.setStyleSheet(selection_qss)
+        if hasattr(self, "champs_table"):
+            self.champs_table.setStyleSheet(selection_qss)
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -202,7 +204,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         self.acts_table.itemSelectionChanged.connect(self._update_buttons)
         at_layout.addWidget(self.acts_table)
 
-        self.acts_empty = EmptyState(icon="🗑", message="لا توجد أنشطة محذوفة.")
+        self.acts_empty = EmptyState(icon="🗑", message=t("recycle.empty_activities"))        
         self.acts_empty.hide()
         at_layout.addWidget(self.acts_empty, stretch=1)
 
@@ -215,33 +217,92 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         a_btns.addWidget(self.restore_act_btn)
         at_layout.addLayout(a_btns)
 
-        self.tabs.addTab(acts_tab, "الأنشطة")
+        self.tabs.addTab(acts_tab, t("recycle.tab_activities"))
 
+        # ===== Tab 5: Archived Championships =====
+        champs_tab = QWidget()
+        ct_layout = QVBoxLayout(champs_tab)
+        ct_layout.setContentsMargins(0, SPACING["md"], 0, 0)
+
+        self.champs_table = make_standard_table(
+            headers=[
+                t("recycle.col.name"),
+                t("recycle.col.event_date"),
+                t("recycle.col.archived_at"),
+            ],
+            column_modes=["stretch", "resize", "resize"],
+            parent=self,
+        )
+        self.champs_table.itemSelectionChanged.connect(self._update_buttons)
+        ct_layout.addWidget(self.champs_table)
+
+        self.champs_empty = EmptyState(
+            icon="🗑", message=t("recycle.empty_championships")
+        )
+        self.champs_empty.hide()
+        ct_layout.addWidget(self.champs_empty, stretch=1)
+
+        c_btns = QHBoxLayout()
+        c_btns.addStretch()
+        self.restore_champ_btn = QPushButton(t("recycle.btn_restore"))
+        self.restore_champ_btn.setEnabled(False)
+        self.restore_champ_btn.clicked.connect(self._on_restore_champ)
+
+        self.delete_champ_btn = QPushButton(t("recycle.btn_delete_forever"))
+        make_danger(self.delete_champ_btn)
+        self.delete_champ_btn.setEnabled(False)
+        self.delete_champ_btn.clicked.connect(self._on_delete_champ)
+
+        c_btns.addWidget(self.restore_champ_btn)
+        c_btns.addWidget(self.delete_champ_btn)
+        ct_layout.addLayout(c_btns)
+
+        self.tabs.addTab(champs_tab, t("recycle.tab_championships"))
     def refresh(self):
         contents = archive_service.get_recycle_bin_contents()
-        
+
         players = contents["players"]
         subs = contents["subscriptions"]
-        
+
         from repositories import users_repo
         users = users_repo.list_tombstoned()
 
+        from repositories import activities_repo
+        acts = activities_repo.list_archived()
+
+        from repositories import championships_repo
+        champs = championships_repo.list_championships(include_archived=True)
+        # list_championships(include_archived=True) returns ALL rows —
+        # filter to only the archived ones for the recycle bin tab.
+        champs = [c for c in champs if c.archived_at is not None]
+
+        # Tab labels with live counts (translated).
         self.tabs.setTabText(0, f"{t('recycle.tab_players')} ({len(players)})")
         self.tabs.setTabText(1, f"{t('recycle.tab_subs')} ({len(subs)})")
         self.tabs.setTabText(2, f"{t('recycle.tab_users')} ({len(users)})")
-        
-        
-        from repositories import activities_repo
-        acts = activities_repo.list_archived()
-        self.tabs.setTabText(3, f"الأنشطة ({len(acts)})")
-        self._render_acts(acts)
-        
-        # FIXED: Include users in the empty button check
-        self.empty_button.setEnabled(len(players) > 0 or len(subs) > 0)
+        self.tabs.setTabText(3, f"{t('recycle.tab_activities')} ({len(acts)})")
+        self.tabs.setTabText(4, f"{t('recycle.tab_championships')} ({len(champs)})")
+
+        # Enable "Empty Bin" whenever ANY tab has content.
+        # Note: empty_recycle_bin() currently only empties players + subs,
+        # so this button still won't purge users/activities/championships
+        # — but at least it's not lying by staying greyed out when the
+        # only thing in the bin is a user or an activity.
+        any_content = (
+            len(players) > 0
+            or len(subs) > 0
+            or len(users) > 0
+            or len(acts) > 0
+            or len(champs) > 0
+        )
+        self.empty_button.setEnabled(any_content)
+
+        # Render each tab.
         self._render_players(players)
         self._render_subs(subs)
         self._render_users(users)
-
+        self._render_acts(acts)
+        self._render_champs(champs)
 
     def _render_acts(self, acts):
         self.acts_table.setRowCount(len(acts))
@@ -258,6 +319,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             self.acts_table.setItem(i, 1, QTableWidgetItem(a.archived_at or "—"))
             
 
+
     def _on_restore_act(self):
         rows = self.acts_table.selectionModel().selectedRows()
         if not rows: return
@@ -267,6 +329,63 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             activities_repo.restore(aid)
             self.refresh()
 
+
+    def _render_champs(self, champs):
+        self.champs_table.setRowCount(len(champs))
+        if not champs:
+            self.champs_table.hide()
+            self.champs_empty.show()
+            return
+
+        self.champs_table.show()
+        self.champs_empty.hide()
+
+        for i, c in enumerate(champs):
+            name_item = QTableWidgetItem(c.name or "—")
+            name_item.setData(Qt.ItemDataRole.UserRole, c.championship_id)
+            self.champs_table.setItem(i, 0, name_item)
+            self.champs_table.setItem(
+                i, 1, QTableWidgetItem(c.event_date or "—")
+            )
+            self.champs_table.setItem(
+                i, 2, QTableWidgetItem(c.archived_at or "—")
+            )
+
+    def _selected_champ_id(self):
+        rows = self.champs_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        return self.champs_table.item(rows[0].row(), 0).data(
+            Qt.ItemDataRole.UserRole
+        )
+
+    def _on_restore_champ(self):
+        cid = self._selected_champ_id()
+        if cid is None:
+            return
+        try:
+            from repositories import championships_repo
+            championships_repo.restore_championship(cid)
+            self.refresh()
+        except Exception as e:
+            warn(self, t("recycle.err_title"), str(e))
+
+    def _on_delete_champ(self):
+        cid = self._selected_champ_id()
+        if cid is None:
+            return
+        dlg = _TypedConfirmDialog(
+            self,
+            t("recycle.confirm_delete_champ_title"),
+            t("recycle.confirm_delete_champ_body"),
+        )
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            try:
+                from repositories import championships_repo
+                championships_repo.delete_championship(cid)
+                self.refresh()
+            except Exception as e:
+                warn(self, t("recycle.err_title"), str(e))
 
     def _render_users(self, users):
         self.users_table.setRowCount(len(users))
@@ -357,6 +476,10 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         elif idx == 3:
             has = bool(self.acts_table.selectionModel().selectedRows())
             self.restore_act_btn.setEnabled(has)
+        elif idx == 4:
+            has = bool(self.champs_table.selectionModel().selectedRows())
+            self.restore_champ_btn.setEnabled(has)
+            self.delete_champ_btn.setEnabled(has)
 
     def _selected_player_id(self):
         rows = self.players_table.selectionModel().selectedRows()

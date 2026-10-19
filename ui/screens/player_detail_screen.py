@@ -133,6 +133,43 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         card_row.addLayout(card_buttons)
         ov.addLayout(card_row)
 
+        # ===== Championships tab (scrollable) =====
+        champ_scroll = QScrollArea()
+        champ_scroll.setWidgetResizable(True)
+        champ_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        champ_widget = QWidget()
+        ch_layout = QVBoxLayout(champ_widget)
+        ch_layout.setContentsMargins(0, SPACING["lg"], 0, 0)
+        ch_layout.setSpacing(SPACING["lg"])
+
+        self.champ_card = SectionCard(title=t("champ.detail.player_history"))
+        self.champ_table = make_standard_table(
+            headers=[
+                t("champ.col.event"),
+                t("champ.col.date"),
+                t("champ.col.weight"),
+                t("champ.col.belt"),
+                t("champ.col.result"),
+            ],
+            column_modes=["stretch", "resize", "resize", "resize", "resize"],
+            parent=self,
+        )
+        self.champ_card.body.addWidget(self.champ_table)
+
+        # Empty-state hint, hidden by default; _load_championships() toggles it.
+        self.champ_empty_label = QLabel(t("champ.detail.no_history"))
+        self.champ_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.champ_empty_label.setWordWrap(True)
+        self.champ_empty_label.hide()
+        self.champ_card.body.addWidget(self.champ_empty_label)
+
+        ch_layout.addWidget(self.champ_card)
+        ch_layout.addStretch()
+        
+        champ_scroll.setWidget(champ_widget)
+        # (Tab is added later — after Overview and Attendance — so the
+        # tab order is: Overview → Attendance → Championships → Records.)
         # Subscriptions card
         self.sub_card = SectionCard(title=t("detail.sub.group"))
 
@@ -273,6 +310,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         attendance_scroll.setWidget(attendance)
         tabs.addTab(attendance_scroll, t("detail.tab.attendance"))
 
+        # ===== Championships tab (already built above as champ_scroll) =====
+        tabs.addTab(champ_scroll, t("champ.title"))
+
         # ===== Records & Activity tab (scrollable) =====
         records_scroll = QScrollArea()
         records_scroll.setWidgetResizable(True)
@@ -285,7 +325,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
     def restyle(self):
         tm = theme()
-        self.sub_empty_label.setStyleSheet(
+        empty_qss = (
             f"QLabel {{"
             f"  color: {tm.color('text_secondary')};"
             f"  background-color: transparent;"
@@ -293,7 +333,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             f"  font-style: italic;"
             f"}}"
         )
-
+        self.sub_empty_label.setStyleSheet(empty_qss)
+        if hasattr(self, "champ_empty_label"):
+            self.champ_empty_label.setStyleSheet(empty_qss)
         # Apply clear selection styling to both tables
         selection_qss = (
             f"QTableWidget {{"
@@ -339,6 +381,8 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         if hasattr(self, "records_tab"):
             self.records_tab.player_name = player.full_name
             self.records_tab.refresh()
+        if hasattr(self, "champ_table"):
+            self._load_championships()
 
     def _render_sub_table(self):
         subs = self._active_subs
@@ -495,6 +539,66 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             )
             self.attendance_table.setItem(i, 4, QTableWidgetItem(entry.recorded_by or ""))
 
+
+    def _load_championships(self):
+        """
+        Populate the Championships tab with every championship this player
+        was assigned to (past and future, newest first per the repo's
+        ORDER BY event_date DESC).
+
+        Belt and result are stored as lowercase keys since T6
+        ('white', 'gold', …). Legacy rows may still contain raw values,
+        so we translate known keys and fall back to raw otherwise.
+        """
+        from repositories import championships_repo
+
+        rows = championships_repo.get_player_championships(self.player_id)
+        self.champ_table.setRowCount(len(rows))
+
+        if not rows:
+            self.champ_table.hide()
+            self.champ_empty_label.show()
+            return
+
+        self.champ_table.show()
+        self.champ_empty_label.hide()
+
+        KNOWN_BELTS = {"white", "yellow", "orange", "green",
+                       "blue", "brown", "black"}
+        KNOWN_RESULTS = {"gold", "silver", "bronze", "participant"}
+
+        for i, c in enumerate(rows):
+            # Event name (from championships.name via champ_name alias)
+            self.champ_table.setItem(
+                i, 0, QTableWidgetItem(c.get("champ_name") or "—")
+            )
+
+            # Date
+            self.champ_table.setItem(
+                i, 1, QTableWidgetItem(c.get("event_date") or "—")
+            )
+
+            # Weight
+            w = c.get("weight_kg")
+            self.champ_table.setItem(
+                i, 2, QTableWidgetItem(f"{w} kg" if w else "—")
+            )
+
+            # Belt — translate known keys, else show raw
+            raw_belt = (c.get("belt") or "").strip().lower()
+            if raw_belt in KNOWN_BELTS:
+                belt_text = t(f"belt.{raw_belt}")
+            else:
+                belt_text = c.get("belt") or "—"
+            self.champ_table.setItem(i, 3, QTableWidgetItem(belt_text))
+
+            # Result — translate known keys, else show raw
+            raw_res = (c.get("result") or "").strip().lower()
+            if raw_res in KNOWN_RESULTS:
+                res_text = t(f"result.{raw_res}")
+            else:
+                res_text = c.get("result") or "—"
+            self.champ_table.setItem(i, 4, QTableWidgetItem(res_text))
     # ---------- actions ----------
 
     def _on_back_clicked(self):
