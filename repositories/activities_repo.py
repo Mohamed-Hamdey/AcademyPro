@@ -21,13 +21,15 @@ class Activity:
     activity_id: Optional[int]
     name_en: str
     name_ar: str
-    default_days: list          # list of weekday names
+    default_days: list
     color: Optional[str] = None
     active: bool = True
     created_at: Optional[str] = None
+    archived_at: Optional[str] = None  # <--- ADD THIS
 
     @classmethod
     def from_row(cls, row) -> "Activity":
+        keys = row.keys() if hasattr(row, "keys") else []
         try:
             days = json.loads(row["default_days"]) if row["default_days"] else []
         except (ValueError, TypeError):
@@ -40,6 +42,7 @@ class Activity:
             color=row["color"],
             active=bool(row["active"]),
             created_at=row["created_at"],
+            archived_at=row["archived_at"] if "archived_at" in keys else None, # <--- ADD THIS
         )
 
     def default_days_json(self) -> str:
@@ -84,11 +87,11 @@ def list_all(include_inactive: bool = False) -> list[Activity]:
     try:
         if include_inactive:
             rows = conn.execute(
-                "SELECT * FROM activities ORDER BY active DESC, name_en"
+                "SELECT * FROM activities WHERE archived_at IS NULL ORDER BY active DESC, name_en"
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM activities WHERE active = 1 ORDER BY name_en"
+                "SELECT * FROM activities WHERE active = 1 AND archived_at IS NULL ORDER BY name_en"
             ).fetchall()
         return [Activity.from_row(r) for r in rows]
     finally:
@@ -182,5 +185,47 @@ def count_active_subscriptions_by_status(activity_id: int) -> int:
             (activity_id,),
         ).fetchone()
         return row[0] if row else 0
+    finally:
+        conn.close()
+
+def delete(activity_id: int) -> None:
+    """Permanently delete an activity from the DB. Only used if it has no references."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM activities WHERE activity_id = ?", (activity_id,))
+        conn.commit()
+    finally:
+        conn.close()
+        
+def archive(activity_id: int) -> None:
+    from datetime import datetime
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE activities SET archived_at = ? WHERE activity_id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), activity_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def restore(activity_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE activities SET archived_at = NULL WHERE activity_id = ?",
+            (activity_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def list_archived() -> list[Activity]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM activities WHERE archived_at IS NOT NULL ORDER BY archived_at DESC"
+        ).fetchall()
+        return [Activity.from_row(r) for r in rows]
     finally:
         conn.close()

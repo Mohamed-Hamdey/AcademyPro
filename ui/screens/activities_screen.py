@@ -1,22 +1,14 @@
 """
 Activities management screen — v4 design.
-
-Manager-only. List of all activities, with:
-  * Toolbar (search + Add)
-  * Table: name (English · Arabic), days, subscriptions count, status
-  * Actions: Deactivate / Reactivate
-  * "Show inactive" toggle to reveal soft-deleted activities
-  * Double-click a row → edit
 """
 
 import os
 import sys
-
+from ui.utils import Debouncer
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QLabel,
 )
-
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 
@@ -25,10 +17,11 @@ from services import activity_service
 from repositories.activities_repo import Activity
 from ui.components import Toolbar, SectionCard, EmptyState
 from ui.dialogs.activity_form_dialog import ActivityFormDialog
-from ui.theme import theme, ThemedWidget, make_secondary, make_danger
+from ui.theme import theme, ThemedWidget, make_secondary, make_danger, make_warning
 from ui.design import SPACING
 from ui.i18n import t
 from ui.message_box import warn, ask
+from ui.table_helpers import make_standard_table
 
 
 class ActivitiesScreen(ThemedWidget, QWidget):
@@ -36,16 +29,13 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         QWidget.__init__(self, parent)
         self._rows = []
         self._loaded = False
+        self._search_debouncer = Debouncer(250, self.refresh, parent=self)
         self._build_ui()
-        # Deferred to first show — see showEvent.
         self._init_theme()
 
     def showEvent(self, event):
         super().showEvent(event)
-        if not self._loaded:
-            self._loaded = True
-            self.refresh()
-    # ---------- UI ----------
+        self.refresh()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -58,7 +48,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         self.search_input.setPlaceholderText(t("activities.search_placeholder"))
         self.search_input.setProperty("cssClass", "search")
         self.search_input.setMinimumWidth(240)
-        self.search_input.textChanged.connect(self.refresh)
+        self.search_input.textChanged.connect(self._search_debouncer.trigger)
 
         self.show_inactive_checkbox = QCheckBox(t("activities.show_inactive"))
         self.show_inactive_checkbox.stateChanged.connect(self.refresh)
@@ -74,84 +64,77 @@ class ActivitiesScreen(ThemedWidget, QWidget):
 
         self.table_card = SectionCard(title=t("activities.title"))
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels([
-            t("activities.col.name"),
-            t("activities.col.days"),
-            t("activities.col.subscriptions"),
-            t("activities.col.status"),
-            t("activities.col.color"),
-        ])
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.table = make_standard_table(
+            headers=[
+                t("activities.col.name"),
+                t("activities.col.days"),
+                t("activities.col.subscriptions"),
+                t("activities.col.status"),
+                t("activities.col.color"),
+            ],
+            column_modes=["stretch", "stretch", "resize", "resize", "fixed"],
+            parent=self,
+        )
         self.table.setColumnWidth(4, 60)
-
-        self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(36)
         self.table.horizontalHeader().setFixedHeight(36)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.setShowGrid(False)
-        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.table.itemSelectionChanged.connect(self._update_actions)
         self.table.cellDoubleClicked.connect(lambda *_: self._on_edit())
 
         self.table_card.body.addWidget(self.table)
 
-        # Two empty states — one for "no activities at all" (first run,
-        # with an Add CTA), one for "no matches" (no CTA).
-        self.empty_first_run = EmptyState(
-            icon="🏃",
-            message=t("activities.empty"),
-            action_text=t("activities.add"),
-            on_action=self._on_add,
-        )
+        self.empty_first_run = EmptyState(icon="🏃", message=t("activities.empty"), action_text=t("activities.add"), on_action=self._on_add)
         self.empty_first_run.hide()
         self.table_card.body.addWidget(self.empty_first_run)
 
-        self.empty_no_results = EmptyState(
-            icon="🔍",
-            message=t("activities.no_results"),
-        )
+        self.empty_no_results = EmptyState(icon="🔍", message=t("activities.no_results"))
         self.empty_no_results.hide()
         self.table_card.body.addWidget(self.empty_no_results)
 
-        # --- Action row (inside the card, right-aligned) ---
         self.table_card.body.addSpacing(SPACING["sm"])
 
         action_row = QHBoxLayout()
         action_row.setSpacing(SPACING["sm"])
 
         self.toggle_button = QPushButton(t("activities.action.deactivate"))
-        make_danger(self.toggle_button)
+        make_warning(self.toggle_button)  # Yellow
         self.toggle_button.clicked.connect(self._on_toggle_active)
         self.toggle_button.setEnabled(False)
 
+        self.delete_button = QPushButton(t("activities.action.delete"))
+        make_danger(self.delete_button)
+        self.delete_button.clicked.connect(self._on_delete)
+        self.delete_button.setEnabled(False)
+
         action_row.addStretch()
         action_row.addWidget(self.toggle_button)
+        action_row.addWidget(self.delete_button)
 
         self.table_card.body.addLayout(action_row)
-
-        # Card hugs its content; leftover space collapses below.
-        root.addWidget(self.table_card)
-        root.addStretch()
-
-    # ---------- theming ----------
+        root.addWidget(self.table_card, stretch=1)
 
     def restyle(self):
+        tm = theme()
+        self.table.setStyleSheet(
+            f"QTableWidget {{"
+            f"  selection-background-color: {tm.color('primary_soft')};"
+            f"  selection-color: {tm.color('text')};"
+            f"}}"
+            f"QTableWidget::item:selected {{"
+            f"  background-color: {tm.color('primary_soft')};"
+            f"  color: {tm.color('text')};"
+            f"}}"
+            f"QTableWidget::item:hover:!selected {{"
+            f"  background-color: {tm.color('surface_alt')};"
+            f"}}"
+        )
         if hasattr(self, "_rows"):
             self._render_rows(self._rows)
 
-    # ---------- data ----------
-
     def refresh(self):
-        show_inactive = self.show_inactive_checkbox.isChecked()
-        all_acts = activity_service.list_all() if show_inactive else activity_service.list_active()
+        # Always fetch all (including suspended). 
+        # If show_inactive is unchecked, we'll still show them but with a suspended tag.
+        all_acts = activity_service.list_all()
 
         query = self.search_input.text().strip().lower()
         if query:
@@ -166,7 +149,6 @@ class ActivitiesScreen(ThemedWidget, QWidget):
     def _render_rows(self, activities):
         search_text = self.search_input.text().strip()
 
-        # ---- Empty-state dispatch ----
         if not activities:
             self.table.hide()
             if search_text:
@@ -185,58 +167,60 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         self.table.setRowCount(len(activities))
         tm = theme()
 
-        # Hide the color column entirely if no visible activity has a color.
         has_any_color = any(a.color for a in activities)
         self.table.setColumnHidden(4, not has_any_color)
 
+        show_inactive = self.show_inactive_checkbox.isChecked()
+
         for i, a in enumerate(activities):
-            # Name — "Kung Fu · الكونغ فو"
+            # If it's inactive and the checkbox is OFF, we still show it, 
+            # but we can dim it to indicate it's suspended.
+            is_suspended = not a.active
+            
             name = f"{a.name_en} · {a.name_ar}"
             name_item = QTableWidgetItem(name)
-            if not a.active:
+            if is_suspended:
                 name_item.setForeground(QColor(tm.color("text_secondary")))
             self.table.setItem(i, 0, name_item)
 
-            # Days — also dimmed for inactive
             days_str = ", ".join(t(f"weekday.{d.lower()}") for d in a.default_days)
             days_item = QTableWidgetItem(days_str)
-            if not a.active:
+            if is_suspended:
                 days_item.setForeground(QColor(tm.color("text_secondary")))
             self.table.setItem(i, 1, days_item)
 
-            # Subscriptions — "active / total"
             active_count = activity_service.count_active_references(a.activity_id)
-            total_count = activity_service.count_references(a.activity_id)
-            count_item = QTableWidgetItem(f"{active_count} / {total_count}")
+            count_item = QTableWidgetItem(str(active_count))
             count_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if not a.active:
+            if is_suspended:
                 count_item.setForeground(QColor(tm.color("text_secondary")))
             self.table.setItem(i, 2, count_item)
 
             # Status
-            status_text = (
-                t("activities.status.active") if a.active
-                else t("activities.status.inactive")
-            )
+            if a.active:
+                status_text = t("activities.status.active")
+                color = tm.color("success")
+                bg = tm.color("success_soft")
+            else:
+                status_text = t("activities.status.inactive") # Suspended
+                color = tm.color("warning")
+                bg = tm.color("warning_soft")
+
             status_item = QTableWidgetItem(status_text)
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            color = tm.color("success") if a.active else tm.color("text_secondary")
-            bg = tm.color("success_soft") if a.active else tm.color("neutral_soft")
             status_item.setForeground(QColor(color))
             status_item.setBackground(QColor(bg))
             self.table.setItem(i, 3, status_item)
 
-            # Color swatch — only rendered when the column is visible
             if has_any_color:
                 color_item = QTableWidgetItem()
                 if a.color:
                     color_item.setBackground(QColor(a.color))
-                color_item.setFlags(
-                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
-                )
+                color_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                 self.table.setItem(i, 4, color_item)
 
         self._update_actions()
+
     def _selected(self) -> Activity:
         rows = self.table.selectionModel().selectedRows()
         if not rows:
@@ -250,17 +234,14 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         a = self._selected()
         enabled = a is not None
         self.toggle_button.setEnabled(enabled)
+        self.delete_button.setEnabled(enabled)
 
-        # Always reset text/style first, so a stale "Reactivate" label
-        # doesn't linger after the selection is cleared.
         if a is None or a.active:
             self.toggle_button.setText(t("activities.action.deactivate"))
-            make_danger(self.toggle_button)
+            make_warning(self.toggle_button)
         else:
             self.toggle_button.setText(t("activities.action.reactivate"))
-            make_secondary(self.toggle_button)
-
-    # ---------- actions ----------
+            make_warning(self.toggle_button)
 
     def _on_add(self):
         dlg = ActivityFormDialog(parent=self)
@@ -275,23 +256,37 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         if dlg.exec():
             self.refresh()
 
+    def _on_delete(self):
+        a = self._selected()
+        if a is None:
+            return
+        if not ask(self, t("activities.confirm.delete_title"), t("activities.confirm.delete_msg", name=a.name_en)):
+            return
+        
+        try:
+            # Move to archive (Recycle Bin)
+            from repositories import activities_repo
+            activities_repo.archive(a.activity_id)
+        except Exception as e:
+            warn(self, t("activities.confirm.title"), str(e))
+            return
+            
+        self.refresh()
+
     def _on_toggle_active(self):
         a = self._selected()
         if a is None:
             return
 
         if a.active:
-            # Deactivating — warn about references
+            # Suspend (Soft-disable)
             refs = activity_service.count_references(a.activity_id)
             msg_key = "activities.confirm.deactivate_with_refs" if refs > 0 else "activities.confirm.deactivate"
-            if not ask(
-                self,
-                t("activities.confirm.title"),
-                t(msg_key, name=a.name_en, count=refs),
-            ):
+            if not ask(self, t("activities.confirm.title"), t(msg_key, name=a.name_en, count=refs)):
                 return
             activity_service.deactivate(a.activity_id)
         else:
+            # Reactivate
             activity_service.reactivate(a.activity_id)
 
         self.refresh()

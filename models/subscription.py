@@ -24,6 +24,8 @@ class Subscription:
     activated_by: Optional[str] = None
     payment_amount: Optional[float] = None
     payment_date: Optional[str] = None
+    archived_at: Optional[str] = None
+
 
     @classmethod
     def from_row(cls, row) -> "Subscription":
@@ -52,4 +54,7 @@ class Subscription:
             activated_by=row["activated_by"],
             payment_amount=row["payment_amount"],
             payment_date=row["payment_date"],
+            archived_at=(
+            row["archived_at"] if "archived_at" in row.keys() else None
+            ),
         )

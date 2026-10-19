@@ -111,3 +111,9 @@ def count_references(activity_id: int) -> int:
 def count_active_references(activity_id: int) -> int:
     """Number of subscriptions for this activity with status='active'."""
     return activities_repo.count_active_subscriptions_by_status(activity_id)
+
+def delete(activity_id: int) -> None:
+    refs = count_references(activity_id)
+    if refs > 0:
+        raise ValueError("Cannot delete activity with existing subscriptions.")
+    activities_repo.delete(activity_id)

@@ -1,23 +1,17 @@
 """
 Main application window — v4 shell with role-gated navigation.
-
-Sidebar items are permission-gated via app_state.app.can(...). A user
-menu in the top bar shows the current user and offers Logout.
-
-Logout tears down the window and returns to the login dialog. The user
-stays logged out until they authenticate again.
 """
 
 import os
 import sys
+from ui.screens.championships_screen import ChampionshipsScreen
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.expenses_screen import ExpensesScreen
 from qtpy.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QDialog,
 )
-from qtpy.QtCore import Qt, QSettings
+from qtpy.QtCore import Qt, QSettings, QTimer
 from qtpy.QtGui import QGuiApplication
-from qtpy.QtCore import Qt
 from ui.screens.activities_screen import ActivitiesScreen
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from ui.screens.scan_screen import ScanScreen
@@ -28,7 +22,7 @@ from ui.shell import TopBar, Sidebar, Workspace
 from ui.theme import theme
 from ui.i18n import t
 from app_state import app as app_state
-
+from ui.screens.recycle_bin_screen import RecycleBinScreen
 
 _current_window: "MainWindow" = None
 
@@ -49,12 +43,9 @@ class MainWindow(QMainWindow):
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
 
-        # ---- restore saved geometry, if any ----
         self._restore_geometry()
 
-        # Map of nav_key -> page widget, only for pages the user can see.
         self._pages_by_nav_key = {}
-        # Ordered list of nav keys the user actually sees, for sidebar dispatch.
         self._nav_keys_in_order = []
 
         self._build_ui()
@@ -65,7 +56,6 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ---- Top bar (logout + sidebar toggle callbacks) ----
         self.topbar = TopBar(
             on_logout=self._on_logout,
             on_toggle_sidebar=self._toggle_sidebar,
@@ -74,7 +64,7 @@ class MainWindow(QMainWindow):
             on_about=self._on_about,
         )
         outer.addWidget(self.topbar)
-        # ---- Body: sidebar + workspace ----
+
         body = QWidget()
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -83,11 +73,6 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.workspace = Workspace()
 
-        # Pass `self` as parent so each screen is created as a child of
-        # this window, not as a brief top-level widget. Without this,
-        # Qt briefly realizes each screen as an OS-level window during
-        # construction and the theme sweep, which produces a burst of
-        # empty rectangles flashing on screen at startup.
         self._register_page("nav.check_in",       "checkin.title",   ScanScreen(self),        "checkin")
         self._register_page("nav.manage_players", "players.title",   PlayerListScreen(self),  "players.view")
         self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(self),   "financials.view")
@@ -95,59 +80,57 @@ class MainWindow(QMainWindow):
         self._register_page("nav.users",          "users.title",   UsersScreen(self),     "users.manage")
         self._register_page("nav.expenses", "expenses.title", ExpensesScreen(self), "expenses.manage")
         self._register_page("nav.audit",          "audit.title",   AuditScreen(self),     "audit.view")
+        self._register_page("nav.championships", "champ.title", ChampionshipsScreen(self), "championships.manage")
+        
+        # Register Recycle Bin without adding to main sidebar
+        self._register_page("nav.recycle_bin",    "recycle.title", RecycleBinScreen(self),"settings.manage", hide_from_sidebar=True)
 
-        # One signal drives everything.
+        # Signals
         self.sidebar.on_change(self._on_nav_changed)
-
+        
+        footer_idx = self.sidebar.add_footer_item("nav.recycle_bin", "🗑", required_permission="settings.manage")
+        if footer_idx >= 0:
+            self.sidebar.on_footer_change(self._on_footer_nav_changed)
+            
         body_layout.addWidget(self.sidebar)
         body_layout.addWidget(self.workspace, stretch=1)
         outer.addWidget(body, stretch=1)
 
         self.setCentralWidget(central)
 
-        # Select the first visible nav item
         if self._nav_keys_in_order:
             self.sidebar.set_current_row(0)
 
         theme().on_change(lambda _m: self._restyle())
 
-        # Warm heavyweight imports (cv2, pyzbar) on a background thread
-        # ~2s after the window opens, so the first QR scan feels instant.
-        from qtpy.QtCore import QTimer
         QTimer.singleShot(2000, self._warm_heavy_imports)
 
     def _warm_heavy_imports(self):
-        """Import cv2 / pyzbar on a background thread so the first scan
-        doesn't pay the ~1s cold-import cost on the UI thread."""
         import threading
-
         def _warm():
             try:
-                import cv2              # noqa: F401
-                from pyzbar import pyzbar  # noqa: F401
+                import cv2
+                from pyzbar import pyzbar
             except Exception:
                 pass
-
         threading.Thread(target=_warm, daemon=True).start()
 
     def _register_page(self, nav_key: str, title_key: str, page: QWidget,
-                       permission: str):
-        """
-        Add a page to the workspace and (if permitted) a nav item to the
-        sidebar. Keeps both lists in lockstep, so sidebar index == workspace
-        index always holds among *visible* items.
-        """
-        glyph = self._glyph_for(nav_key)
-        sidebar_index = self.sidebar.add_item(
-            nav_key, glyph, required_permission=permission
-        )
-
-        if sidebar_index < 0:
-            # Permission denied — don't register the page. Explicitly
-            # detach and schedule for deletion so it can't linger.
+                       permission: str, hide_from_sidebar: bool = False):
+        if permission is not None and not app_state.can(permission):
             page.setParent(None)
             page.deleteLater()
             return
+
+        if not hide_from_sidebar:
+            glyph = self._glyph_for(nav_key)
+            sidebar_index = self.sidebar.add_item(
+                nav_key, glyph, required_permission=permission
+            )
+            if sidebar_index < 0:
+                page.setParent(None)
+                page.deleteLater()
+                return
 
         self.workspace.add_page(nav_key, t(title_key), page)
         self._pages_by_nav_key[nav_key] = page
@@ -163,71 +146,65 @@ class MainWindow(QMainWindow):
             "nav.activities":     "🏃",
             "nav.expenses":       "💸",
             "nav.audit":          "🗒",
+            "nav.championships":  "🏆",
+            "nav.recycle_bin":    "🗑",
         }.get(nav_key, "•")
 
     def _on_nav_changed(self, index: int):
         """Sidebar index → workspace page key."""
         if index < 0 or index >= len(self._nav_keys_in_order):
             return
+            
+        # Clear footer selection so it doesn't stay highlighted
+        self.sidebar.footer_list.blockSignals(True)
+        self.sidebar.footer_list.setCurrentRow(-1)
+        self.sidebar.footer_list.blockSignals(False)
+
         nav_key = self._nav_keys_in_order[index]
-        # Any pending header action (e.g. a Back button) belongs to the
-        # previous page — clear it before swapping pages.
         self.workspace.set_header_action(None)
         self.workspace.show_page_by_key(nav_key)
-        
+
+    def _on_footer_nav_changed(self, index: int):
+        if index < 0:
+            return
+            
+        # Clear main nav selection
+        self.sidebar.nav_list.blockSignals(True)
+        self.sidebar.nav_list.setCurrentRow(-1)
+        self.sidebar.nav_list.blockSignals(False)
+
+        self.workspace.set_header_action(None)
+        self.workspace.show_page_by_key("nav.recycle_bin")
+        self.workspace.set_title(t("recycle.title"))
+
     def _on_backup_now(self):
-        """User asked for a manual backup from the top-bar menu."""
         from services import backup_service
         from ui.message_box import info, error
-        from ui.i18n import t
-
         path = backup_service.create_backup(label="manual")
         if path:
-            import os
-            info(
-                self,
-                t("backup.now.done_title"),
-                t("backup.now.done_msg", name=os.path.basename(path)),
-            )
+            info(self, t("backup.now.done_title"), t("backup.now.done_msg", name=os.path.basename(path)))
         else:
-            error(
-                self,
-                t("backup.now.failed_title"),
-                t("backup.now.failed_msg"),
-            )
+            error(self, t("backup.now.failed_title"), t("backup.now.failed_msg"))
 
     def _on_restore_backup(self):
-        """User asked to restore a backup from the top-bar menu."""
         from ui.dialogs.restore_backup_dialog import RestoreBackupDialog
-        from ui.message_box import ask
-        from ui.i18n import t
-
         dlg = RestoreBackupDialog(parent=self)
-        if dlg.exec() != dlg.DialogCode.Accepted:
-            return
-
-        # The restore already happened inside the dialog. The running
-        # process now holds stale data — tell the user to restart.
-        from qtpy.QtWidgets import QApplication
-        QApplication.instance().quit()
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            from qtpy.QtWidgets import QApplication
+            QApplication.instance().quit()
         
     def _on_about(self):
         from ui.dialogs.about_dialog import AboutDialog
-        dlg = AboutDialog(parent=self)
-        dlg.exec()
+        AboutDialog(parent=self).exec()
+
     def _toggle_sidebar(self):
         self.sidebar.toggle_collapsed()
+
     def _restyle(self):
         pass
 
-    # ---------- logout ----------
-
     def _on_logout(self):
-        """Clear the session and return to the login dialog."""
         from qtpy.QtWidgets import QApplication
-
-        # Audit the logout BEFORE clearing app_state — otherwise the
-        # record falls through to "system".
         try:
             user = app_state.user
             if user is not None:
@@ -240,8 +217,7 @@ class MainWindow(QMainWindow):
         self.close()
 
         from ui.screens.login_screen import LoginDialog
-        login = LoginDialog()
-        if login.exec() != QDialog.DialogCode.Accepted:
+        if LoginDialog().exec() != QDialog.DialogCode.Accepted:
             QApplication.instance().quit()
             return
 
@@ -249,32 +225,25 @@ class MainWindow(QMainWindow):
         new_window = MainWindow()
         _current_window = new_window
         new_window.show()
-    # ---------- language switch ----------
 
     def _switch_language(self):
         from qtpy.QtWidgets import QApplication
         from qtpy.QtCore import QSettings
         from ui import i18n
 
-        current = i18n.current_language()
-        new_lang = "en" if current == "ar" else "ar"
+        new_lang = "en" if i18n.current_language() == "ar" else "ar"
         i18n.load(new_lang)
         QSettings("MembershipSystem", "app").setValue("language", new_lang)
 
         app = QApplication.instance()
         if app is not None:
-            if i18n.is_rtl():
-                app.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-            else:
-                app.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+            app.setLayoutDirection(Qt.LayoutDirection.RightToLeft if i18n.is_rtl() else Qt.LayoutDirection.LeftToRight)
 
         self.close()
         global _current_window
         new_window = MainWindow()
         _current_window = new_window
         new_window.show()
-
-    # ---------- lifecycle ----------
 
     def closeEvent(self, event):
         try:
@@ -283,14 +252,11 @@ class MainWindow(QMainWindow):
                 scan.stop_camera()
         except Exception:
             pass
-        # ---- save window geometry ----
         try:
             self._save_geometry()
         except Exception:
             pass
         super().closeEvent(event)
-
-    # ---------- window geometry ----------
 
     _GEOM_ORG = "MembershipSystem"
     _GEOM_APP = "app"
@@ -302,31 +268,17 @@ class MainWindow(QMainWindow):
         s.sync()
 
     def _restore_geometry(self):
-        """
-        Restore saved window geometry, if any. If the saved geometry
-        would put the window off-screen (e.g. monitor was unplugged),
-        fall back to the default size and center on the primary screen.
-        """
         s = QSettings(self._GEOM_ORG, self._GEOM_APP)
         blob = s.value(self._GEOM_KEY, None)
         if blob is None:
             return
-
         try:
-            restored = self.restoreGeometry(blob)
-        except Exception:
-            return
-        if not restored:
-            return
-
-        # Sanity check: is the window actually on-screen?
-        try:
+            if not self.restoreGeometry(blob):
+                return
             geo = self.frameGeometry()
-            screens = QGuiApplication.screens()
-            for screen in screens:
+            for screen in QGuiApplication.screens():
                 if screen.availableGeometry().intersects(geo):
-                    return   # good enough — window is at least partly visible
-            # Off-screen: reset to defaults, centered.
+                    return
             self.resize(1100, 720)
             primary = QGuiApplication.primaryScreen()
             if primary is not None:

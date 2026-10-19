@@ -65,4 +65,7 @@ def up(conn):
         )
         inserted += 1
 
-    print(f"[migrations] backfilled {inserted} payment(s) from subscriptions")
+    import logging
+    logging.getLogger(__name__).info(
+        "Backfilled %d payment(s) from subscriptions", inserted
+    )

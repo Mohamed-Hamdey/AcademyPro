@@ -28,7 +28,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
-
+import logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from paths import user_data_path
 
@@ -285,7 +285,9 @@ def _verify_signature(payload_bytes: bytes, signature: bytes) -> bool:
 
     pub_path = _public_key_path()
     if not os.path.exists(pub_path):
-        print(f"[license] public key not found at {pub_path}")
+        logging.getLogger(__name__).warning(
+            "Public key not found at %s", pub_path
+        )
         return False
 
     try:
@@ -296,7 +298,10 @@ def _verify_signature(payload_bytes: bytes, signature: bytes) -> bool:
     except InvalidSignature:
         return False
     except Exception as e:
-        print(f"[license] signature verification error: {e}")
+        
+        logging.getLogger(__name__).warning(
+            "cryptography not installed — cannot verify license"
+        )
         return False
 
 

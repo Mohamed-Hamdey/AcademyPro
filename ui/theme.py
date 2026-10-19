@@ -100,7 +100,9 @@ def build_stylesheet(mode: str) -> str:
     danger           = c("danger", "#DC2626")
     danger_hover     = c("danger_hover", "#B91C1C")
     danger_pressed   = c("danger_pressed", "#991B1B")
-
+    warning          = c("warning", "#D97706")
+    warning_hover    = c("warning_hover", "#B45309")
+    warning_pressed  = c("warning_pressed", "#92400E")
     btn_secondary_bg       = c("btn_secondary_bg", surface)
     btn_secondary_hover    = c("btn_secondary_hover", "#F1F5F9")
     btn_secondary_pressed  = c("btn_secondary_pressed", "#E2E8F0")
@@ -283,7 +285,16 @@ QPushButton:disabled {{
     background-color: {btn_disabled_bg};
     color: {btn_disabled_text};
 }}
-
+QPushButton[cssClass="warning"] {{
+    background-color: {warning};
+    color: {text_on_primary};
+}}
+QPushButton[cssClass="warning"]:hover   {{ background-color: {warning_hover}; }}
+QPushButton[cssClass="warning"]:pressed {{ background-color: {warning_pressed}; }}
+QPushButton[cssClass="warning"]:disabled {{
+    background-color: {btn_disabled_bg};
+    color: {btn_disabled_text};
+}}
 QPushButton[cssClass="danger"] {{
     background-color: {danger};
     color: {text_on_primary};
@@ -320,6 +331,32 @@ QPushButton[cssClass="ghost"]:hover {{
 }}
 
 /* ==================== Inputs ==================== */
+/* ==================== Checkboxes ==================== */
+QCheckBox {{
+    color: {text};
+    background-color: transparent;
+    spacing: 8px;
+}}
+
+QCheckBox::indicator {{
+    width: 18px;
+    height: 18px;
+    border: 2px solid {border};
+    border-radius: 4px;
+    background-color: {surface};
+}}
+
+QCheckBox::indicator:hover {{
+    border-color: {primary};
+    
+
+}}
+
+QCheckBox::indicator:checked {{
+    background-color: {primary};
+    border-color: {primary};
+    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==);
+}}
 QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox, QTextEdit {{
     border: 1px solid {border};
     border-radius: {input_r}px;
@@ -339,19 +376,29 @@ QDoubleSpinBox:focus, QSpinBox:focus, QTextEdit:focus {{
 
 QLineEdit::placeholder {{ color: {text_secondary}; }}
 
+QComboBox {{
+    padding-right: 30px; /* Leave room for the arrow */
+}}
+
 QComboBox::drop-down {{
     subcontrol-origin: padding;
-    subcontrol-position: center right;
-    width: 24px;
-    border-left: 1px solid {border};
+    subcontrol-position: top right;
+    width: 30px;
+    border-left: none;
 }}
 
 QComboBox::down-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {text_secondary};
+    /* A clean, white/light SVG chevron */
+    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iNiA5IDEyIDE1IDE4IDkiPjwvcG9seWxpbmU+PC9zdmc+);
+    width: 16px;
+    height: 16px;
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
     margin-right: 8px;
+}}
+
+QComboBox::down-arrow:on {{
+    /* Optional: rotate arrow when open (hard to do in QSS, so we'll skip, but this keeps it clean) */
 }}
 
 QComboBox QAbstractItemView {{
@@ -391,7 +438,25 @@ QHeaderView::section {{
     font-weight: 600;
     font-size: {label_size}px;
 }}
+/* ==================== Spin Boxes & Date Edits ==================== */
+QDateEdit::up-button, QSpinBox::up-button, QDoubleSpinBox::up-button,
+QDateEdit::down-button, QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    width: 20px;
+    border: none;
+    background-color: transparent;
+}}
 
+QDateEdit::up-arrow, QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iMTggMTUgMTIgOSA2IDE1Ij48L3BvbHlsaW5lPjwvc3ZnPg==);
+    width: 12px;
+    height: 12px;
+}}
+
+QDateEdit::down-arrow, QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iNiA5IDEyIDE1IDE4IDkiPjwvcG9seWxpbmU+PC9zdmc+);
+    width: 12px;
+    height: 12px;
+}}
 /* ==================== Tabs ==================== */
 QTabWidget::pane {{
     border: 1px solid {border};
@@ -800,6 +865,10 @@ def polish_widget(widget):
 
 def make_danger(button):
     button.setProperty("cssClass", "danger")
+    polish_widget(button)
+def make_warning(button):
+    """Amber/warning styled button — for 'sensitive but reversible' actions."""
+    button.setProperty("cssClass", "warning")
     polish_widget(button)
 
 

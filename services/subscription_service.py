@@ -9,12 +9,12 @@ independently.
 import os
 import sys
 from datetime import date, timedelta
-
+import logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config.config_loader import load_config
 from models.subscription import Subscription
 from repositories import subscriptions_repo
-
+from db.database import get_connection
 
 # ---------------------------------------------------------------------------
 # Expiry + activation
@@ -80,8 +80,10 @@ def activate(
                 method="cash",
                 notes="Initial subscription payment",
             )
-        except Exception as e:
-            print(f"[payment_service] failed to log initial payment: {e}")
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to log initial payment"
+            )
 
     return new_sub_id
 
@@ -109,8 +111,11 @@ def record_payment(subscription_id: int, payment_amount: float, payment_date: da
             method="cash",
             notes="Subscription payment",
         )
-    except Exception as e:
-        print(f"[payment_service] failed to log ledger entry: {e}")
+    except Exception:
+        
+        logging.getLogger(__name__).exception(
+            "Failed to log ledger entry"
+        )
 
     # 2. Update subscription row (denormalized copy + expiry)
     start = date.fromisoformat(sub.start_date)
@@ -124,6 +129,160 @@ def record_payment(subscription_id: int, payment_amount: float, payment_date: da
         new_status,
     )
 
+
+def update(
+    subscription_id: int,
+    *,
+    activity_id: int,
+    sessions_total: int,
+    allowed_days: list,
+    start_date: date,
+    payment_amount: float,
+    payment_date: date,
+) -> None:
+    """
+    Update every editable field of a subscription.
+
+    Recomputes expiry from start_date + payment_date. Adjusts
+    sessions_remaining when sessions_total changes (delta is added to
+    the remaining count — so 8→12 with 4 remaining becomes 8 remaining).
+
+    If payment_amount or payment_date changed, the linked payment
+    ledger row is updated in place. Every change is logged to the audit
+    log with old→new values.
+    """
+    from services import audit_service
+
+    if sessions_total <= 0:
+        raise ValueError("Sessions count must be greater than zero")
+    if not allowed_days:
+        raise ValueError("At least one training day is required")
+    if payment_amount is not None and payment_amount < 0:
+        raise ValueError("Payment amount cannot be negative")
+
+    existing = subscriptions_repo.get_by_id(subscription_id)
+    if existing is None:
+        raise ValueError("Subscription not found")
+
+    # Capture old values for the audit diff.
+    old = {
+        "activity_id": existing.activity_id,
+        "sessions_total": existing.sessions_total,
+        "sessions_remaining": existing.sessions_remaining,
+        "allowed_days": list(existing.allowed_days or []),
+        "start_date": existing.start_date,
+        "expiry_date": existing.expiry_date,
+        "payment_amount": existing.payment_amount,
+        "payment_date": existing.payment_date,
+    }
+
+    # Recompute expiry from the same policy activate() uses.
+    new_expiry = compute_expiry_date(start_date, payment_date)
+
+    # Adjust sessions_remaining by the delta in sessions_total.
+    delta = sessions_total - existing.sessions_total
+    new_remaining = max(0, existing.sessions_remaining + delta)
+
+    # Write the row.
+    subscriptions_repo.update_fields(
+        subscription_id,
+        activity_id=activity_id,
+        sessions_total=sessions_total,
+        allowed_days=allowed_days,
+        start_date=start_date.isoformat(),
+        expiry_date=new_expiry.isoformat(),
+        payment_amount=payment_amount,
+        payment_date=payment_date.isoformat(),
+    )
+    # Set the adjusted remaining in a separate call — update_fields
+    # doesn't touch it to keep that function pure.
+    subscriptions_repo.set_sessions_remaining(subscription_id, new_remaining)
+
+    # Sync the ledger row if the payment changed.
+    if (
+        existing.payment_amount != payment_amount
+        or existing.payment_date != payment_date.isoformat()
+    ):
+        try:
+            _sync_payment_ledger_row(
+                subscription_id=subscription_id,
+                player_id=existing.player_id,
+                new_amount=payment_amount,
+                new_date=payment_date,
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to sync payment ledger row for subscription %s",
+                subscription_id,
+            )
+
+    # Build the audit diff (only fields that actually changed).
+    new = {
+        "activity_id": activity_id,
+        "sessions_total": sessions_total,
+        "sessions_remaining": new_remaining,
+        "allowed_days": list(allowed_days or []),
+        "start_date": start_date.isoformat(),
+        "expiry_date": new_expiry.isoformat(),
+        "payment_amount": payment_amount,
+        "payment_date": payment_date.isoformat(),
+    }
+    changes = {
+        k: {"from": old[k], "to": new[k]}
+        for k in new
+        if old[k] != new[k]
+    }
+    if changes:
+        audit_service.record(
+            "subscription.update",
+            target_type="subscription",
+            target_id=subscription_id,
+            details={"changes": changes, "player_id": existing.player_id},
+        )
+
+
+def _sync_payment_ledger_row(
+    subscription_id: int,
+    player_id: int,
+    new_amount: float,
+    new_date: date,
+) -> None:
+    """
+    Update the most recent payment row that's linked to this
+    subscription, so the ledger reflects the new amount/date.
+
+    If no ledger row exists (edge case — older data), create one.
+    """
+    from repositories import payments_repo
+
+    rows = payments_repo.list_for_subscription(subscription_id)
+    if rows:
+        # Update the most recent row (highest payment_id).
+        latest = max(rows, key=lambda p: p.payment_id or 0)
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                UPDATE payments
+                SET amount = ?, payment_date = ?
+                WHERE payment_id = ?
+                """,
+                (new_amount, new_date.isoformat(), latest.payment_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    else:
+        # No ledger entry — create one so the totals are correct.
+        from services import payment_service
+        payment_service.record(
+            player_id=player_id,
+            amount=new_amount,
+            payment_date=new_date,
+            subscription_id=subscription_id,
+            method="cash",
+            notes="Subscription payment (created during edit)",
+        )
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
@@ -210,7 +369,9 @@ def get_all_active(player_id: int) -> list[Subscription]:
         result.append(sub)
     return result
 
-
+def get_suspended(player_id: int) -> list[Subscription]:
+    """Suspended (but not archived) subscriptions for a player."""
+    return subscriptions_repo.get_suspended_for_player(player_id)
 def get_display_status(player_id: int) -> dict:
     """
     Compact status for the player list: one summary line per player.

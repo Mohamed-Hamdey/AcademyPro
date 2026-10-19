@@ -99,7 +99,35 @@ def create_backup(label: str = "auto") -> Optional[str]:
             log.error("create_backup: source db failed integrity check: %s", e)
             return None
 
-        shutil.copy2(src, dest)
+        try:
+            shutil.copy2(src, dest)
+        except Exception:
+            # Copy failed (disk full, permission, network interruption).
+            # Clean up the partial file so it doesn't appear in the
+            # backup list as a corrupt entry.
+            try:
+                if os.path.exists(dest):
+                    os.remove(dest)
+            except OSError:
+                pass
+            raise
+
+        # Sanity check: the destination should have the same size as
+        # the source. If not, treat as a failed backup.
+        try:
+            if os.path.getsize(dest) != os.path.getsize(src):
+                raise IOError(
+                    f"Backup size mismatch: {os.path.getsize(dest)} "
+                    f"vs {os.path.getsize(src)}"
+                )
+        except OSError:
+            # If we can't stat it, that's a failure too.
+            try:
+                os.remove(dest)
+            except OSError:
+                pass
+            raise
+
         log.info("Backup created: %s (%d bytes)", dest, os.path.getsize(dest))
         return dest
 

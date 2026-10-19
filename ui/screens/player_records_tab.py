@@ -170,6 +170,8 @@ class PlayerRecordsTab(ThemedWidget, QWidget):
         self.timeline.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.timeline.setFrameShape(QListWidget.Shape.NoFrame)
         self.timeline.setWordWrap(True)
+        self.timeline.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.timeline.customContextMenuRequested.connect(self._on_timeline_context_menu)
         self.timeline_card.body.addWidget(self.timeline)
 
         self.timeline_empty = EmptyState(
@@ -584,7 +586,50 @@ class PlayerRecordsTab(ThemedWidget, QWidget):
             all_subs=self._all_subs,
             timeline=self._events,
         )
+    def _on_timeline_context_menu(self, pos):
+        item = self.timeline.itemAt(pos)
+        if not item:
+            return
+            
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data or data.get("kind") != "payment":
+            return
+            
+        from qtpy.QtWidgets import QMenu
+        from qtpy.QtGui import QAction
+        
+        menu = QMenu(self)
+        edit_act = QAction(t("payments.edit"), self)
+        edit_act.triggered.connect(lambda: self._edit_payment(data["payment_id"]))
+        menu.addAction(edit_act)
+        
+        del_act = QAction(t("payments.delete"), self)
+        del_act.triggered.connect(lambda: self._delete_payment(data["payment_id"]))
+        menu.addAction(del_act)
+        
+        menu.exec(self.timeline.mapToGlobal(pos))
 
+    def _edit_payment(self, payment_id: int):
+        # You'll need to create a small dialog for this, or reuse an existing one.
+        # For now, we'll just show a message box as a placeholder.
+        from ui.message_box import info
+        info(self, "Edit Payment", "Edit dialog placeholder. (Payment ID: {})".format(payment_id))
+
+    def _delete_payment(self, payment_id: int):
+        from ui.message_box import ask, warn, info
+        if not ask(self, t("payments.confirm_delete_title"), t("payments.confirm_delete_body")):
+            return
+        try:
+            from repositories import payments_repo
+            from services import audit_service
+            # Log before deleting so we know what it was
+            p = payments_repo.get_by_id(payment_id)
+            if p:
+                audit_service.record("payment.delete", target_type="payment", target_id=payment_id, details={"amount": p.amount})
+            payments_repo.delete(payment_id)
+            self.refresh()
+        except Exception as e:
+            warn(self, "Error", str(e))
 
 # ---------------------------------------------------------------------------
 # Helpers

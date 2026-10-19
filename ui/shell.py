@@ -305,6 +305,13 @@ class Sidebar(QWidget):
         self.nav_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         layout.addWidget(self.nav_list, stretch=1)
 
+        # Footer area for items pinned to the bottom (recycle bin, etc.)
+        self.footer_list = QListWidget()
+        self.footer_list.setObjectName("navList") # reuse styles
+        self.footer_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.footer_list.setFixedHeight(60) # enough for one item
+        layout.addWidget(self.footer_list)
+
     def add_item(self, label_key: str, icon_glyph: str,
                  required_permission: str = None) -> int:
         """
@@ -351,11 +358,11 @@ class Sidebar(QWidget):
             self.setFixedWidth(SHELL["sidebar_collapsed_width"])
         else:
             self.setFixedWidth(SHELL["sidebar_width"])
-        # Re-render every item to switch glyph-only / label view
         for i in range(self.nav_list.count()):
             self._render_item(i)
+        for i in range(self.footer_list.count()):
+            self._render_footer_item(i)
         self.restyle()
-
     def collapse(self):
         if not self._collapsed:
             self.toggle_collapsed()
@@ -372,7 +379,46 @@ class Sidebar(QWidget):
 
     def on_change(self, callback):
         self.nav_list.currentRowChanged.connect(callback)
+    def add_footer_item(self, label_key: str, icon_glyph: str,
+                        required_permission: str = None) -> int:
+        """Add a nav item pinned to the bottom of the sidebar."""
+        if required_permission is not None:
+            if not app_state.can(required_permission):
+                return -1
 
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, (label_key, icon_glyph))
+        item.setSizeHint(QSize(0, 42))
+        self.footer_list.addItem(item)
+        self._render_footer_item(self.footer_list.count() - 1)
+        return self.footer_list.count() - 1
+
+    def _render_footer_item(self, index: int):
+        item = self.footer_list.item(index)
+        if item is None:
+            return
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        label_key, glyph = data
+        if self._collapsed:
+            item.setText(glyph)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setToolTip(t(label_key))
+            item.setSizeHint(QSize(0, 48))
+        else:
+            item.setText(f"  {glyph}   {t(label_key)}")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            item.setToolTip("")
+            item.setSizeHint(QSize(0, 42))
+
+    def set_footer_current_row(self, index: int):
+        self.footer_list.setCurrentRow(index)
+        # Clear selection from main list to avoid double-selection look
+        self.nav_list.clearSelection()
+
+    def on_footer_change(self, callback):
+        self.footer_list.currentRowChanged.connect(callback)
     def restyle(self):
         pass
 

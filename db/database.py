@@ -9,6 +9,7 @@ read from there. The database itself is writable user data.
 import sqlite3
 import os
 import sys
+import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from paths import AppPaths, user_data_root
@@ -17,11 +18,13 @@ DB_PATH = AppPaths.database()
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Retry for up to 5s when the DB is locked (e.g. backup running,
+    # antivirus scanning, another process touching the file).
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
-
 
 def init_db() -> None:
     """
@@ -73,7 +76,9 @@ def _handle_integrity_failure(reason: str) -> bool:
         from qtpy.QtWidgets import QApplication
         if QApplication.instance() is None:
             # No GUI — just log and refuse to proceed.
-            print(f"[db] integrity check failed: {reason}")
+            logging.getLogger(__name__).error(
+                "Integrity check failed: %s", reason
+            )
             return False
     except Exception:
         return False
@@ -116,7 +121,10 @@ def _handle_migration_failure(exc: Exception) -> None:
     try:
         from qtpy.QtWidgets import QApplication
         if QApplication.instance() is None:
-            print(f"[db] migration failed: {exc}")
+
+            logging.getLogger(__name__).exception(
+                "Migration failed", exc_info=exc
+            )
             return
     except Exception:
         return

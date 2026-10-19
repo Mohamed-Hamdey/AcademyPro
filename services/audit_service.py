@@ -15,6 +15,7 @@ Usage:
 
 import os
 import sys
+import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from repositories import audit_repo
@@ -54,11 +55,13 @@ def record(action: str,
             target_id=target_id,
             details=details,
         )
-    except Exception as e:
-        # Logging must never break the action. Print and move on.
-        print(f"[audit] failed to record {action}: {e}")
-        return -1
+    except Exception:
+        # Logging must never break the action. Record and move on.
 
+        logging.getLogger(__name__).exception(
+            "Failed to record audit action %s", action
+        )
+        return -1
 
 # -------- convenience wrappers for common actions --------
 

@@ -11,28 +11,28 @@ import shutil
 from datetime import date
 from ui.screens.player_records_tab import PlayerRecordsTab
 from qtpy.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTableWidget,
-    QTableWidgetItem, QHeaderView, QTextEdit, QTabWidget, QFileDialog,
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QTableWidgetItem, QTextEdit, QTabWidget, QFileDialog,
     QScrollArea, QFrame,
 )
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
-
+from ui.table_helpers import make_standard_table
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import get_plan_label
-from repositories import players_repo
+from repositories import players_repo, subscriptions_repo
 from services import subscription_service, attendance_service, activity_service, audit_service
 from services.checkin_service import perform_check_in
 from ui.cards.player_card import PlayerCardWidget
 from ui.dialogs.player_form_dialog import PlayerFormDialog
 from ui.dialogs.subscription_form_dialog import SubscriptionFormDialog
-from ui.dialogs.adjust_sessions_dialog import AdjustSessionsDialog
 from ui.dialogs.update_payment_dialog import UpdatePaymentDialog
 from logic.qr_utils import generate_qr_for_player
 from ui.components import SectionCard
-from ui.theme import theme, ThemedWidget, make_danger, make_secondary
+from ui.theme import theme, ThemedWidget, make_danger, make_secondary, make_warning
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
+from ui.dialogs.edit_subscription_dialog import EditSubscriptionDialog
 from ui.message_box import info, warn, ask
 
 
@@ -59,12 +59,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
     def _install_header_action(self):
         """Ask the enclosing Workspace to show our Back button."""
-        # Guard against a stale reference to a deleted C++ object.
         try:
-            # Accessing .objectName() would raise if the C++ side is gone
             self.back_button.objectName()
         except RuntimeError:
-            # The button was destroyed — rebuild it.
             self.back_button = QPushButton(t("detail.back"))
             self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
             self.back_button.clicked.connect(self._on_back_clicked)
@@ -72,11 +69,11 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         ws = self._find_workspace()
         if ws is not None and hasattr(ws, "set_header_action"):
             ws.set_header_action(self.back_button)
+
     def _uninstall_header_action(self):
         """Remove the Back button from the Workspace header."""
         ws = self._find_workspace()
         if ws is not None and hasattr(ws, "set_header_action"):
-            # Only clear if we're the ones occupying the slot.
             if getattr(ws, "_header_action_widget", None) is self.back_button:
                 ws.set_header_action(None)
 
@@ -88,13 +85,12 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
                 return w
             w = w.parentWidget()
         return None
+
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        # Tabs. The Back button will be injected into the workspace
-        # header row when this screen is shown (see showEvent below).
         tabs = QTabWidget()
         root.addWidget(tabs, stretch=1)
 
@@ -140,24 +136,19 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         # Subscriptions card
         self.sub_card = SectionCard(title=t("detail.sub.group"))
 
-        self.sub_table = QTableWidget(0, 5)
-        self.sub_table.setHorizontalHeaderLabels([
-            t("detail.sub.col.activity"),
-            t("detail.sub.col.plan"),
-            t("detail.sub.col.sessions"),
-            t("detail.sub.col.expires"),
-            t("detail.sub.col.days"),
-        ])
-        hdr = self.sub_table.horizontalHeader()
-        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.sub_table.verticalHeader().setVisible(False)
+        self.sub_table = make_standard_table(
+            headers=[
+                t("detail.sub.col.activity"),
+                t("detail.sub.col.plan"),
+                t("detail.sub.col.sessions"),
+                t("detail.sub.col.expires"),
+                t("detail.sub.col.days"),
+            ],
+            column_modes=["stretch"] * 5,
+            parent=self,
+        )
         self.sub_table.verticalHeader().setDefaultSectionSize(32)
         self.sub_table.horizontalHeader().setFixedHeight(34)
-        self.sub_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.sub_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.sub_table.setAlternatingRowColors(True)
-        self.sub_table.setShowGrid(False)
-        self.sub_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.sub_table.itemSelectionChanged.connect(self._on_sub_selection_changed)
         self.sub_table.setMinimumHeight(150)
         self.sub_table.setMaximumHeight(260)
@@ -180,23 +171,31 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         self.activate_button = QPushButton(t("detail.sub.activate"))
         self.suspend_button = QPushButton(t("detail.sub.suspend"))
-        make_danger(self.suspend_button)
-        self.adjust_button = QPushButton(t("detail.sub.adjust"))
-        make_secondary(self.adjust_button)
+        make_warning(self.suspend_button)
         self.record_payment_button = QPushButton(t("detail.sub.record_payment"))
         make_secondary(self.record_payment_button)
 
+        self.edit_sub_button = QPushButton(t("detail.sub.edit"))
+        make_secondary(self.edit_sub_button)
+        self.edit_sub_button.setEnabled(False)
+
+        self.delete_sub_button = QPushButton(t("detail.sub.delete"))
+        make_danger(self.delete_sub_button)
+        self.delete_sub_button.setEnabled(False)
+
         self.activate_button.clicked.connect(self._on_activate_subscription)
         self.suspend_button.clicked.connect(self._on_suspend_subscription)
-        self.adjust_button.clicked.connect(self._on_adjust_sessions)
         self.record_payment_button.clicked.connect(self._on_record_payment)
+        self.edit_sub_button.clicked.connect(self._on_edit_subscription)
+        self.delete_sub_button.clicked.connect(self._on_delete_subscription)
 
         sub_buttons.addWidget(self.activate_button)
         sub_buttons.addWidget(self.suspend_button)
-        sub_buttons.addWidget(self.adjust_button)
         sub_buttons.addWidget(self.record_payment_button)
+        sub_buttons.addWidget(self.edit_sub_button)
+        sub_buttons.addWidget(self.delete_sub_button)
         sub_buttons.addStretch()
-
+        
         sub_buttons_widget = QWidget()
         sub_buttons_widget.setLayout(sub_buttons)
         sub_buttons_widget.setSizePolicy(
@@ -236,22 +235,17 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         att.setSpacing(SPACING["lg"])
 
         self.att_card = SectionCard(title=t("detail.att.group"))
-        self.attendance_table = QTableWidget(0, 5)
-        self.attendance_table.setHorizontalHeaderLabels([
-            t("detail.att.col.datetime"),
-            t("detail.att.col.result"),
-            t("detail.att.col.reason"),
-            t("detail.att.col.override"),
-            t("detail.att.col.recorded_by"),
-        ])
-        self.attendance_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+        self.attendance_table = make_standard_table(
+            headers=[
+                t("detail.att.col.datetime"),
+                t("detail.att.col.result"),
+                t("detail.att.col.reason"),
+                t("detail.att.col.override"),
+                t("detail.att.col.recorded_by"),
+            ],
+            column_modes=["stretch"] * 5,
+            parent=self,
         )
-        self.attendance_table.verticalHeader().setVisible(False)
-        self.attendance_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.attendance_table.setAlternatingRowColors(True)
-        self.attendance_table.setShowGrid(False)
-        self.attendance_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.attendance_table.setMinimumHeight(200)
         self.att_card.body.addWidget(self.attendance_table)
 
@@ -299,6 +293,24 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             f"  font-style: italic;"
             f"}}"
         )
+
+        # Apply clear selection styling to both tables
+        selection_qss = (
+            f"QTableWidget {{"
+            f"  selection-background-color: {tm.color('primary_soft')};"
+            f"  selection-color: {tm.color('text')};"
+            f"}}"
+            f"QTableWidget::item:selected {{"
+            f"  background-color: {tm.color('primary_soft')};"
+            f"  color: {tm.color('text')};"
+            f"}}"
+            f"QTableWidget::item:hover:!selected {{"
+            f"  background-color: {tm.color('surface_alt')};"
+            f"}}"
+        )
+        self.sub_table.setStyleSheet(selection_qss)
+        self.attendance_table.setStyleSheet(selection_qss)
+
         if hasattr(self, "_active_subs"):
             self._render_sub_table()
 
@@ -310,8 +322,11 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             return
         self.current_player = player
 
-        self._active_subs = subscription_service.get_all_active(self.player_id)
-        most_recent = self._active_subs[0] if self._active_subs else None
+        active = subscription_service.get_all_active(self.player_id)
+        suspended = subscription_service.get_suspended(self.player_id)
+        self._active_subs = active + suspended
+
+        most_recent = active[0] if active else None
         display = subscription_service.get_display_status(self.player_id)
 
         self.player_card.display_player(
@@ -336,27 +351,47 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.sub_table.show()
         self.sub_empty_label.hide()
 
+        tm = theme()
         self.sub_table.blockSignals(True)
         self.sub_table.setRowCount(len(subs))
 
         for i, sub in enumerate(subs):
+            is_suspended = (sub.status == "suspended")
+            dim_color = QColor(tm.color("text_secondary"))
+
             act = activity_service.get(sub.activity_id) if sub.activity_id else None
             act_name = activity_service.get_localized_name(act) if act else "—"
-            self.sub_table.setItem(i, 0, QTableWidgetItem(act_name))
+            if is_suspended:
+                act_name = f"⏸ {act_name}"
+            act_item = QTableWidgetItem(act_name)
+            if is_suspended:
+                act_item.setForeground(dim_color)
+            self.sub_table.setItem(i, 0, act_item)
 
             if sub.plan_type:
                 plan_label = get_plan_label(sub.plan_type)
             else:
                 plan_label = t("detail.sub.custom")
-            self.sub_table.setItem(i, 1, QTableWidgetItem(plan_label))
+            plan_item = QTableWidgetItem(plan_label)
+            if is_suspended:
+                plan_item.setForeground(dim_color)
+            self.sub_table.setItem(i, 1, plan_item)
 
-            self.sub_table.setItem(
-                i, 2,
-                QTableWidgetItem(f"{sub.sessions_remaining} / {sub.sessions_total}")
-            )
-            self.sub_table.setItem(i, 3, QTableWidgetItem(sub.expiry_date))
+            sess_item = QTableWidgetItem(f"{sub.sessions_remaining} / {sub.sessions_total}")
+            if is_suspended:
+                sess_item.setForeground(dim_color)
+            self.sub_table.setItem(i, 2, sess_item)
+
+            exp_item = QTableWidgetItem(sub.expiry_date)
+            if is_suspended:
+                exp_item.setForeground(dim_color)
+            self.sub_table.setItem(i, 3, exp_item)
+
             days = ", ".join(t(f"weekday.{d.lower()}") for d in (sub.allowed_days or []))
-            self.sub_table.setItem(i, 4, QTableWidgetItem(days))
+            days_item = QTableWidgetItem(days)
+            if is_suspended:
+                days_item.setForeground(dim_color)
+            self.sub_table.setItem(i, 4, days_item)
 
         self.sub_table.blockSignals(False)
 
@@ -377,9 +412,68 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
     def _on_sub_selection_changed(self):
         sub = self._selected_sub()
         has_sel = sub is not None
-        self.suspend_button.setEnabled(has_sel)
-        self.adjust_button.setEnabled(has_sel)
+
+        # Suspend/Reactivate logic
+        if has_sel and sub.status == "suspended":
+            self.suspend_button.setText(t("detail.sub.reactivate"))
+            self.suspend_button.setEnabled(True)
+        elif has_sel and sub.status == "active":
+            self.suspend_button.setText(t("detail.sub.suspend"))
+            self.suspend_button.setEnabled(True)
+        else:
+            self.suspend_button.setText(t("detail.sub.suspend"))
+            self.suspend_button.setEnabled(False)
+
         self.record_payment_button.setEnabled(has_sel)
+        self.edit_sub_button.setEnabled(has_sel)
+        self.delete_sub_button.setEnabled(has_sel)
+
+    def _on_edit_subscription(self):
+        sub = self._selected_sub()
+        if sub is None:
+            return
+
+        fresh = subscriptions_repo.get_by_id(sub.subscription_id)
+        if fresh is None:
+            warn(self,
+                 t("detail.sub.edit"),
+                 t("detail.msg.player_not_found"))
+            return
+
+        dlg = EditSubscriptionDialog(fresh, parent=self)
+        if dlg.exec():
+            self.refresh()
+
+    def _on_delete_subscription(self):
+        """Move the selected subscription to the recycle bin."""
+        sub = self._selected_sub()
+        if sub is None:
+            return
+
+        confirmed = ask(
+            self,
+            t("detail.sub.delete_confirm.title"),
+            t("detail.sub.delete_confirm.body"),
+        )
+        if not confirmed:
+            return
+
+        try:
+            from services import archive_service
+            archive_service.archive_subscription(sub.subscription_id)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception(
+                "Failed to archive subscription"
+            )
+            warn(
+                self,
+                t("detail.sub.delete_failed.title"),
+                t("detail.sub.delete_failed.body", error=str(e)),
+            )
+            return
+
+        self.refresh()
 
     def _load_attendance(self):
         rows = attendance_service.get_for_player(self.player_id)
@@ -422,31 +516,23 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         sub = self._selected_sub()
         if sub is None:
             return
-        if ask(self, t("detail.msg.suspend_title"), t("detail.msg.suspend_body")):
-            subscription_service.suspend(sub.subscription_id)
-            audit_service.subscription_suspended(subscription_id=sub.subscription_id)
-            self.refresh()
-
-    def _on_adjust_sessions(self):
-        sub = self._selected_sub()
-        if sub is None:
-            return
-        dialog = AdjustSessionsDialog(
-            sub.subscription_id,
-            sub.sessions_remaining,
-            sub.sessions_total,
-            parent=self,
-        )
-        if dialog.exec():
-            old = sub.sessions_remaining
-            new = dialog.new_value()
-            subscription_service.adjust_sessions(sub.subscription_id, new)
-            audit_service.subscription_sessions_adjusted(
-                subscription_id=sub.subscription_id,
-                old_value=old,
-                new_value=new,
-            )
-            self.refresh()
+            
+        if sub.status == "suspended":
+            # Reactivate
+            if ask(self, t("detail.msg.reactivate_title"), t("detail.msg.reactivate_body")):
+                subscriptions_repo.set_status(sub.subscription_id, "active")
+                audit_service.record(
+                    "subscription.reactivate",
+                    target_type="subscription",
+                    target_id=sub.subscription_id
+                )
+                self.refresh()
+        else:
+            # Suspend
+            if ask(self, t("detail.msg.suspend_title"), t("detail.msg.suspend_body")):
+                subscription_service.suspend(sub.subscription_id)
+                audit_service.subscription_suspended(subscription_id=sub.subscription_id)
+                self.refresh()
 
     def _on_record_payment(self):
         sub = self._selected_sub()
@@ -503,7 +589,6 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
                  t("detail.msg.player_not_found"))
             return
 
-        # Duplicate? Inform and stop.
         if getattr(outcome, "was_duplicate", False):
             warn(
                 self,
@@ -512,8 +597,6 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             )
             return
 
-        # Not enrolled in the currently-selected activity? Shouldn't
-        # happen from this screen, but guard anyway.
         if getattr(outcome, "not_enrolled_in_activity", False):
             warn(
                 self,
@@ -524,7 +607,6 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             )
             return
 
-        # Multiple valid subscriptions → picker.
         if getattr(outcome, "needs_picker", False):
             from ui.dialogs.activity_picker_dialog import ActivityPickerDialog
             picker = ActivityPickerDialog(
@@ -542,7 +624,6 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             if outcome is None:
                 return
 
-        # Audit — only after a real check-in.
         if outcome.checked_in:
             audit_service.manual_checkin(player_id=self.player_id)
 

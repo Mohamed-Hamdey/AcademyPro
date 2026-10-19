@@ -16,7 +16,7 @@ Features:
 """
 
 from datetime import date
-
+import logging
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QListWidget, QListWidgetItem, QComboBox, QDateEdit, QMenu, QApplication,
@@ -202,8 +202,8 @@ class TodayLogDialog(ThemedWidget, QDialog):
                 rows = attendance_repo.get_today_with_details(limit=500)
             else:
                 rows = attendance_repo.get_by_date_with_details(day, limit=500)
-        except Exception as e:
-            print(f"[today_log_dialog] query failed: {e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Query failed")
             rows = []
         self._rows = rows
         self._render()

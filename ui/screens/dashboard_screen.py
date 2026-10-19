@@ -24,6 +24,7 @@ from ui.theme import theme, ThemedWidget, make_secondary
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
 from ui import i18n
+from ui.table_helpers import make_standard_table
 
 
 MONTH_KEYS = [
@@ -55,6 +56,7 @@ class DashboardScreen(ThemedWidget, QWidget):
         self._sport_filter_id = None
         self._method_filter = None
         self._loaded = False
+        self._month_loaded = False
         self._build_ui()
         # Deferred to first show — see showEvent.
         self._init_theme()
@@ -88,10 +90,16 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.tabs.addTab(monthly, t("dash.tab.monthly"))
         self._build_monthly_page(monthly_root)
 
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         root.addWidget(self.tabs, stretch=1)
 
     # ---------- Daily page ----------
-
+    def _on_tab_changed(self, index: int):
+        """Lazy-load the monthly tab on first access."""
+        # Index 1 is the monthly tab (index 0 is daily).
+        if index == 1 and not self._month_loaded:
+            self._month_loaded = True
+            self._refresh_month()
     def _build_daily_page(self, root):
         # Toolbar: date navigation
         self.toolbar = Toolbar()
@@ -217,32 +225,18 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.payments_card.body.addLayout(filters)
 
         # Table
-        self.payments_table = QTableWidget(0, 6)
-        self.payments_table.setHorizontalHeaderLabels([
-            t("dash.payments.col.time"),
-            t("dash.payments.col.player"),
-            t("dash.payments.col.sport"),
-            t("dash.payments.col.amount"),
-            t("dash.payments.col.method"),
-            t("dash.payments.col.note"),
-        ])
-        hdr = self.payments_table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-        self.payments_table.verticalHeader().setVisible(False)
-        self.payments_table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
+        self.payments_table = make_standard_table(
+            headers=[
+                t("dash.payments.col.time"),
+                t("dash.payments.col.player"),
+                t("dash.payments.col.sport"),
+                t("dash.payments.col.amount"),
+                t("dash.payments.col.method"),
+                t("dash.payments.col.note"),
+            ],
+            column_modes=["resize", "stretch", "resize", "resize", "resize", "stretch"],
+            parent=self,
         )
-        self.payments_table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
-        )
-        self.payments_table.setAlternatingRowColors(True)
-        self.payments_table.setShowGrid(False)
-        self.payments_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.payments_table.setMinimumHeight(220)
         self.payments_table.setSortingEnabled(True)
         self.payments_card.body.addWidget(self.payments_table)
@@ -276,28 +270,17 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.week_card.body.addWidget(self.combo_chart)
 
         # 7-day table
-        self.week_table = QTableWidget(0, 5)
-        self.week_table.setHorizontalHeaderLabels([
-            t("dash.week.col.day"),
-            t("dash.week.col.date"),
-            t("dash.week.col.attendance"),
-            t("dash.week.col.revenue"),
-            t("dash.week.col.signups"),
-        ])
-        whdr = self.week_table.horizontalHeader()
-        whdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        whdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        whdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        whdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        whdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self.week_table.verticalHeader().setVisible(False)
-        self.week_table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
+        self.week_table = make_standard_table(
+            headers=[
+                t("dash.week.col.day"),
+                t("dash.week.col.date"),
+                t("dash.week.col.attendance"),
+                t("dash.week.col.revenue"),
+                t("dash.week.col.signups"),
+            ],
+            column_modes=["resize", "resize", "resize", "resize", "stretch"],
+            parent=self,
         )
-        self.week_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.week_table.setAlternatingRowColors(True)
-        self.week_table.setShowGrid(False)
-        self.week_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.week_table.setMinimumHeight(220)
         self.week_table.cellClicked.connect(self._on_week_row_clicked)
         self.week_table.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -466,9 +449,13 @@ class DashboardScreen(ThemedWidget, QWidget):
     def refresh(self):
         self._summary = dashboard_service.day_summary(self._selected_date)
         self._render_day()
-        self._refresh_month()
+        # Only load month data if the monthly tab has been visited.
+        # Otherwise, wait — see _on_tab_changed.
+        if self._month_loaded:
+            self._refresh_month()
 
     def _refresh_month(self):
+        self._month_loaded = True
         y, m = self._month_options[self.month_selector.currentIndex()]
         self._month_summary = dashboard_service.month_summary(y, m)
         self._render_month()

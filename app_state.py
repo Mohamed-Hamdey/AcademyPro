@@ -71,6 +71,7 @@ class AppState:
         "users.manage":     {"manager"},
         "audit.view":       {"manager"},
         "settings.manage":  {"manager"},
+        "championships.manage": {"manager"},
     }
 
     def can(self, action: str) -> bool:

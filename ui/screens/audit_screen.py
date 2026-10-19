@@ -11,7 +11,7 @@ Manager-only. Shows every recorded admin action, filtered by:
 import os
 import sys
 from datetime import date
-
+from ui.utils import Debouncer
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QComboBox, QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -25,12 +25,14 @@ from ui.components import Toolbar, SectionCard, EmptyState
 from ui.theme import theme, ThemedWidget, make_secondary
 from ui.design import SPACING
 from ui.i18n import t
+from ui.table_helpers import make_standard_table
 
 
 class AuditScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self._loaded = False
+        self._search_debouncer = Debouncer(250, self.refresh, parent=self)
         self._build_ui()
         # Deferred to first show — see showEvent.
         self._init_theme()
@@ -55,8 +57,7 @@ class AuditScreen(ThemedWidget, QWidget):
         self.search_input.setPlaceholderText(t("audit.search_placeholder"))
         self.search_input.setProperty("cssClass", "search")
         self.search_input.setMinimumWidth(200)
-        self.search_input.textChanged.connect(self.refresh)
-
+        self.search_input.textChanged.connect(self._search_debouncer.trigger)
         self.action_filter = QComboBox()
         self.action_filter.addItem(t("audit.filter.all_actions"), None)
         for code in audit_repo.distinct_actions():
@@ -105,29 +106,17 @@ class AuditScreen(ThemedWidget, QWidget):
         # ---- Table card ----
         self.table_card = SectionCard(title=t("audit.title"))
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels([
-            t("audit.col.when"),
-            t("audit.col.user"),
-            t("audit.col.action"),
-            t("audit.col.target"),
-            t("audit.col.details"),
-        ])
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        # Give Details most of the leftover space.
-        header.setStretchLastSection(True)
-
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.setShowGrid(False)
-        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table = make_standard_table(
+            headers=[
+                t("audit.col.when"),
+                t("audit.col.user"),
+                t("audit.col.action"),
+                t("audit.col.target"),
+                t("audit.col.details"),
+            ],
+            column_modes=["resize", "resize", "resize", "resize", "stretch"],
+            parent=self,
+        )
         self.table.setMinimumHeight(380)
 
         self.table_card.body.addWidget(self.table)

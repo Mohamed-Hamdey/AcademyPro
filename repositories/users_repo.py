@@ -181,3 +181,71 @@ def count_active_managers() -> int:
         return row[0] if row else 0
     finally:
         conn.close()
+        
+def tombstone(user_id: int) -> None:
+    """
+    Disable a user account permanently, freeing their username and
+    hiding them from the active list. The row stays in the DB so audit
+    logs still resolve correctly.
+    """
+    from datetime import datetime
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    
+    conn = get_connection()
+    try:
+        # Get original username first to preserve it in the display name
+        row = conn.execute("SELECT username, display_name FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return
+            
+        orig_username = row["username"]
+        orig_display = row["display_name"]
+        
+        new_username = f"deleted_{user_id}_{stamp}"
+        new_display = f"محذوف: {orig_display} ({orig_username})"
+        
+        conn.execute(
+            """
+            UPDATE users
+            SET username = ?, 
+                display_name = ?, 
+                active = 0, 
+                password_hash = '',
+                photo_path = NULL
+            WHERE user_id = ?
+            """,
+            (new_username, new_display, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+        
+def list_tombstoned() -> list[User]:
+    """All users that have been soft-deleted (tombstoned)."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM users WHERE username LIKE 'deleted_%' ORDER BY user_id DESC"
+        ).fetchall()
+        return [User.from_row(r) for r in rows]
+    finally:
+        conn.close()
+
+def restore_tombstoned(user_id: int, new_username: str, new_display_name: str) -> None:
+    """Restore a tombstoned user with a new username."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            UPDATE users
+            SET username = ?, 
+                display_name = ?, 
+                active = 1,
+                password_hash = ? 
+            WHERE user_id = ?
+            """,
+            (new_username, new_display_name, "PLACEHOLDER_RESET", user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()

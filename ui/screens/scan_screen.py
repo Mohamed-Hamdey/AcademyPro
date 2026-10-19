@@ -15,7 +15,7 @@ from datetime import date
 import os
 import sys
 from ui.formatting import format_attendance_row, is_ar
-
+import logging
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QListWidget, QListWidgetItem, QStackedWidget, QComboBox,
@@ -60,6 +60,7 @@ class ScanScreen(ThemedWidget, QWidget):
 
         self._recent_rows = []       # cached rows for context-menu lookups
         self._loaded = False
+        self._camera_fail_count = 0   # consecutive read failures
 
         self._build_ui()
         # NOTE: don't call _refresh_recent_checkins() here. It runs on
@@ -365,6 +366,7 @@ class ScanScreen(ThemedWidget, QWidget):
             self.camera_status_pill.set_status(t("checkin.status.unavailable"), "error")
             self._cap = None
             return
+        self._camera_fail_count = 0
         self._camera_timer.start(200)
         self.camera_status_pill.set_status(t("checkin.status.scanning"), "success")
         self.start_scan_button.setEnabled(False)
@@ -381,7 +383,15 @@ class ScanScreen(ThemedWidget, QWidget):
             return
         ret, frame = self._cap.read()
         if not ret:
+            # Camera may have been unplugged. Count consecutive failures;
+            # after 5 (about 1 second at 200ms interval), stop the timer
+            # and surface the state so the receptionist can act.
+            self._camera_fail_count += 1
+            if self._camera_fail_count >= 5:
+                self._handle_camera_lost()
             return
+        # Successful read — reset the counter.
+        self._camera_fail_count = 0
         self._render_frame(frame)
         player_id_str = decode_qr_from_frame(frame)
         if player_id_str:
@@ -390,7 +400,18 @@ class ScanScreen(ThemedWidget, QWidget):
             except ValueError:
                 return
             self.handle_player_id(player_id)
-
+    def _handle_camera_lost(self):
+        """Camera stopped returning frames. Stop the loop and notify."""
+        logging.getLogger(__name__).warning(
+            "Camera stopped responding — stopping scan loop"
+        )
+        self.stop_camera()
+        self.camera_label.setText(t("checkin.camera_unavailable"))
+        self.camera_status_pill.set_status(
+            t("checkin.status.unavailable"), "error"
+        )
+        self.start_scan_button.setEnabled(True)
+        self.stop_scan_button.setEnabled(False)
     def _render_frame(self, frame):
         import cv2
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -408,8 +429,8 @@ class ScanScreen(ThemedWidget, QWidget):
     def _refresh_recent_checkins(self):
         try:
             rows = attendance_repo.get_today_with_details(limit=100)
-        except Exception as e:
-            print(f"[scan_screen] recent query failed: {e}")
+        except Exception:
+            logging.getLogger(__name__).exception("Recent query failed")
             rows = []
         self._recent_rows = rows
         self._render_recent()
@@ -566,8 +587,10 @@ class ScanScreen(ThemedWidget, QWidget):
             screen = main_win._pages_by_nav_key.get("nav.manage_players")
             if screen is not None and hasattr(screen, "_open_detail"):
                 screen._open_detail(player_id)
-        except Exception as e:
-            print(f"[scan_screen] failed to open player {player_id}: {e}")
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to open player %s", player_id
+            )
 
     def _on_open_full_log(self):
         """Open the full attendance-log dialog (works for all roles)."""

@@ -26,6 +26,7 @@ from ui.theme import theme, ThemedWidget, make_secondary, make_danger
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
 from ui.message_box import warn, ask
+from ui.table_helpers import make_standard_table
 
 
 MONTH_KEYS = [
@@ -107,24 +108,16 @@ class ExpensesScreen(ThemedWidget, QWidget):
 
         # Table card
         self.table_card = SectionCard(title=t("expenses.list.title"))
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels([
-            t("expenses.col.date"),
-            t("expenses.col.category"),
-            t("expenses.col.description"),
-            t("expenses.col.amount"),
-        ])
-        hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.setShowGrid(False)
-        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table = make_standard_table(
+            headers=[
+                t("expenses.col.date"),
+                t("expenses.col.category"),
+                t("expenses.col.description"),
+                t("expenses.col.amount"),
+            ],
+            column_modes=["resize", "resize", "stretch", "resize"],
+            parent=self,
+        )
         self.table.setMinimumHeight(180)
         self.table.itemSelectionChanged.connect(self._update_actions)
         self.table.cellDoubleClicked.connect(lambda *_: self._on_edit())

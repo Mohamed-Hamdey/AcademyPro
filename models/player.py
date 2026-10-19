@@ -21,6 +21,7 @@ class Player:
     qr_code_path: Optional[str]
     status: str = "active"
     notes: Optional[str] = None
+    archived_at: Optional[str] = None
 
     @classmethod
     def from_row(cls, row) -> "Player":
@@ -34,4 +35,9 @@ class Player:
             qr_code_path=row["qr_code_path"],
             status=row["status"],
             notes=row["notes"],
+            archived_at=(
+                row["archived_at"] if "archived_at" in row.keys() else None
+            ),
         )
+        
+        

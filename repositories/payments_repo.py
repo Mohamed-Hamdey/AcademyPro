@@ -222,3 +222,19 @@ def delete(payment_id: int) -> None:
         conn.commit()
     finally:
         conn.close()
+        
+def update_safe_fields(payment_id: int, method: str, notes: str, payment_date: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            UPDATE payments 
+            SET method = ?, notes = ?, payment_date = ?
+            WHERE payment_id = ?
+            """,
+            (method, notes, payment_date, payment_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
