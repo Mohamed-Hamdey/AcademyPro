@@ -1,9 +1,5 @@
 """
 Player model — pure dataclass, no SQL.
-
-Note: the `player_group` field has been removed (activities replace
-groups). Any code that used to reference it now uses the subscription's
-activity instead.
 """
 
 from dataclasses import dataclass
@@ -22,9 +18,12 @@ class Player:
     status: str = "active"
     notes: Optional[str] = None
     archived_at: Optional[str] = None
+    belt: Optional[str] = "white"      # <--- NEW
+    weight_kg: Optional[float] = None  # <--- NEW
 
     @classmethod
     def from_row(cls, row) -> "Player":
+        keys = row.keys() if hasattr(row, "keys") else []
         return cls(
             player_id=row["player_id"],
             full_name=row["full_name"],
@@ -36,8 +35,12 @@ class Player:
             status=row["status"],
             notes=row["notes"],
             archived_at=(
-                row["archived_at"] if "archived_at" in row.keys() else None
+                row["archived_at"] if "archived_at" in keys else None
+            ),
+            belt=(
+                row["belt"] if "belt" in keys else "white"
+            ),
+            weight_kg=(
+                row["weight_kg"] if "weight_kg" in keys else None
             ),
         )
-        
-        

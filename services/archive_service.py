@@ -256,6 +256,15 @@ def empty_recycle_bin() -> dict:
         "subscriptions": len(archived_subs),
     }
     log.warning("Recycle bin emptied: %s", summary)
+        # Audit: bulk purge
+    try:
+        from services import audit_service
+        audit_service.record(
+            "system.empty_recycle_bin",
+            details=summary,
+        )
+    except Exception:
+        log.exception("Audit: failed to log empty_recycle_bin")
     return summary
 
 

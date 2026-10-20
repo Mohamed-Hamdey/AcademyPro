@@ -1,19 +1,39 @@
 """
-Global app theme (v4.1) — driven by ui/design.py tokens.
+Global app theme (v4.2) — driven by ui/design.py tokens.
 
-Fixes from v4.0:
-  * build_stylesheet now includes a defensive `_safe()` helper so a
-    missing token doesn't crash the whole QSS build.
-  * Explicit high-specificity rules for top bar / sidebar text so
-    nothing falls through to a wrong color.
+What changed in v4.2 (public API is unchanged — every function, class and
+constant from v4.1 is still here with the same signature):
+
+  * Icons (combo arrow, spin arrows, checkbox tick) are now generated as
+    small PNG files on first use and referenced by file path. Qt style
+    sheets do not reliably support `url(data:...)` URIs, which is what
+    produced the little square glyphs instead of arrows. The icons are
+    drawn with QPainter (no SVG plugin needed, so PyInstaller builds work)
+    and are coloured from the active theme tokens.
+  * Tables now style QTableView, so QTableWidget AND future QTableView
+    screens (delegate based lists) share one look. Added hover, header
+    hover, corner button.
+  * Inputs: hover / disabled / invalid states, a "search" variant,
+    QPlainTextEdit, symmetric combo padding so it works in RTL and LTR.
+  * New components styled: QProgressBar (with state colours), QRadioButton,
+    QToolButton, QMessageBox, QSplitter, QScrollArea.
+  * New button classes: "success" and "segment" (checkable pill used for
+    activity tabs / filter chips).
+  * New label classes: "muted", "caption", "title".
+  * Missing hover/pressed/soft tokens are derived from the base colour
+    instead of silently falling back to light-mode hex values.
+  * Removed the invalid `QLineEdit::placeholder` rule (placeholder colour
+    comes from the palette, set in build_palette()).
 """
 
 from __future__ import annotations
 
+import os
+import tempfile
 from typing import Callable, Optional
 
-from qtpy.QtCore import QObject, QSettings, Signal, QEasingCurve, QPropertyAnimation
-from qtpy.QtGui import QPalette, QColor
+from qtpy.QtCore import QObject, QSettings, Signal, QEasingCurve, QPropertyAnimation, Qt, QPointF
+from qtpy.QtGui import QPalette, QColor, QImage, QPainter, QPen, QPolygonF
 from qtpy.QtWidgets import (
     QApplication, QPushButton, QWidget, QGraphicsOpacityEffect,
     QGroupBox, QTabWidget, QTableWidget, QHeaderView,
@@ -54,6 +74,77 @@ TEXT_SECONDARY = LIGHT["text_secondary"]
 
 
 # ---------------------------------------------------------------------------
+# Icon generation (file based — see module docstring)
+# ---------------------------------------------------------------------------
+
+_ICON_DIR = os.path.join(tempfile.gettempdir(), "academy_system_theme_icons")
+_icon_cache: dict = {}
+
+
+def _draw_icon(kind: str, color: str, path: str) -> bool:
+    """Draw a small icon with QPainter and save it as PNG. Returns success."""
+    size = 18 if kind == "check" else 16
+    img = QImage(size, size, QImage.Format.Format_ARGB32)
+    img.fill(QColor(0, 0, 0, 0))
+
+    painter = QPainter(img)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        width = 2.2 if kind == "check" else 1.8
+        pen = QPen(
+            QColor(color), width,
+            Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin,
+        )
+        painter.setPen(pen)
+
+        if kind == "chevron_down":
+            pts = [QPointF(4.5, 6.5), QPointF(8.0, 10.0), QPointF(11.5, 6.5)]
+        elif kind == "chevron_up":
+            pts = [QPointF(4.5, 9.5), QPointF(8.0, 6.0), QPointF(11.5, 9.5)]
+        elif kind == "check":
+            pts = [QPointF(4.5, 9.5), QPointF(7.8, 12.8), QPointF(13.5, 5.8)]
+        else:
+            return False
+
+        painter.drawPolyline(QPolygonF(pts))
+    finally:
+        painter.end()
+
+    return img.save(path, "PNG")
+
+
+def _icon(kind: str, color: str) -> str:
+    """
+    Return a QSS value for an icon: `url("<path>")`, or `none` if the icon
+    could not be created (the control then simply shows no glyph).
+    """
+    key = (kind, color.lower())
+    if key in _icon_cache:
+        return _icon_cache[key]
+
+    value = "none"
+    try:
+        os.makedirs(_ICON_DIR, exist_ok=True)
+        fname = f"{kind}_{color.lstrip('#').lower()}.png"
+        path = os.path.join(_ICON_DIR, fname)
+        if os.path.exists(path) or _draw_icon(kind, color, path):
+            value = 'url("%s")' % path.replace("\\", "/")
+    except Exception:
+        value = "none"
+
+    _icon_cache[key] = value
+    return value
+
+
+def _shade(hex_color: str, pct: int = 112) -> str:
+    """Derive a darker variant of a colour (used for missing hover tokens)."""
+    try:
+        return QColor(hex_color).darker(pct).name()
+    except Exception:
+        return hex_color
+
+
+# ---------------------------------------------------------------------------
 # Stylesheet builder
 # ---------------------------------------------------------------------------
 
@@ -65,9 +156,6 @@ def _safe(palette: dict, key: str, fallback: str) -> str:
 def build_stylesheet(mode: str) -> str:
     p = LIGHT if mode == "light" else DARK
 
-    # Guard against accidentally-missing tokens by pre-resolving everything
-    # through _safe(). If a token is missing, we fall back to a light-mode
-    # default rather than crashing.
     def c(key, fallback):
         return _safe(p, key, fallback)
 
@@ -80,7 +168,7 @@ def build_stylesheet(mode: str) -> str:
     input_r = RADIUS["sm"]
     card_r = RADIUS["lg"]
 
-    # Pre-resolve every token we use
+    # ---- tokens ----
     text             = c("text", "#172033")
     text_secondary   = c("text_secondary", "#64748B")
     text_disabled    = c("text_disabled", "#94A3B8")
@@ -93,27 +181,38 @@ def build_stylesheet(mode: str) -> str:
     divider          = c("divider", "#E8EDF3")
 
     primary          = c("primary", "#2563EB")
-    primary_hover    = c("primary_hover", "#1D4ED8")
-    primary_pressed  = c("primary_pressed", "#1E40AF")
+    primary_hover    = c("primary_hover", _shade(primary))
+    primary_pressed  = c("primary_pressed", _shade(primary, 125))
     primary_soft     = c("primary_soft", "#DBEAFE")
 
+    success          = c("success", "#16A34A")
+    success_hover    = c("success_hover", _shade(success))
+    success_pressed  = c("success_pressed", _shade(success, 125))
+    success_soft     = c("success_soft", "#DCFCE7")
+
     danger           = c("danger", "#DC2626")
-    danger_hover     = c("danger_hover", "#B91C1C")
-    danger_pressed   = c("danger_pressed", "#991B1B")
+    danger_hover     = c("danger_hover", _shade(danger))
+    danger_pressed   = c("danger_pressed", _shade(danger, 125))
+    danger_soft      = c("danger_soft", "#FEE2E2")
+
     warning          = c("warning", "#D97706")
-    warning_hover    = c("warning_hover", "#B45309")
-    warning_pressed  = c("warning_pressed", "#92400E")
+    warning_hover    = c("warning_hover", _shade(warning))
+    warning_pressed  = c("warning_pressed", _shade(warning, 125))
+    warning_soft     = c("warning_soft", "#FEF3C7")
+
+    neutral_soft     = c("neutral_soft", surface_alt)
+
     btn_secondary_bg       = c("btn_secondary_bg", surface)
-    btn_secondary_hover    = c("btn_secondary_hover", "#F1F5F9")
-    btn_secondary_pressed  = c("btn_secondary_pressed", "#E2E8F0")
+    btn_secondary_hover    = c("btn_secondary_hover", surface_alt)
+    btn_secondary_pressed  = c("btn_secondary_pressed", divider)
     btn_secondary_border   = c("btn_secondary_border", border)
-    btn_disabled_bg        = c("btn_disabled_bg", "#E2E8F0")
-    btn_disabled_text      = c("btn_disabled_text", "#94A3B8")
+    btn_disabled_bg        = c("btn_disabled_bg", divider)
+    btn_disabled_text      = c("btn_disabled_text", text_disabled)
 
     topbar_bg        = c("topbar_bg", surface)
     topbar_border    = c("topbar_border", border)
-    search_bg        = c("search_bg", "#F1F5F9")
-    search_border    = c("search_border", "#E2E8F0")
+    search_bg        = c("search_bg", surface_alt)
+    search_border    = c("search_border", border)
 
     nav_bg           = c("nav_bg", "#EEF2F7")
     nav_item         = c("nav_item", "#64748B")
@@ -121,7 +220,11 @@ def build_stylesheet(mode: str) -> str:
     nav_item_sel     = c("nav_item_sel", "#DBEAFE")
     nav_item_sel_text= c("nav_item_sel_text", "#1E40AF")
     nav_brand        = c("nav_brand", "#172033")
-    nav_hairline     = c("nav_hairline", "#DCE3EC")
+
+    # ---- icons (theme coloured, file based) ----
+    arrow_down = _icon("chevron_down", text_secondary)
+    arrow_up   = _icon("chevron_up", text_secondary)
+    check_icon = _icon("check", text_on_primary)
 
     return f"""
 * {{
@@ -137,7 +240,17 @@ QMainWindow, QDialog {{
 QWidget {{
     background-color: transparent;
 }}
-/* ==================== Menus (QMenu, popup menus) ==================== */
+
+QScrollArea {{
+    border: none;
+    background-color: transparent;
+}}
+
+QSplitter::handle {{
+    background-color: {divider};
+}}
+
+/* ==================== Menus ==================== */
 QMenu {{
     background-color: {surface};
     color: {text};
@@ -168,6 +281,7 @@ QMenu::separator {{
     background-color: {divider};
     margin: 6px 8px;
 }}
+
 /* ==================== Top bar ==================== */
 QWidget#topBar {{
     background-color: {topbar_bg};
@@ -260,9 +374,25 @@ QGroupBox::title {{
     background-color: {surface};
 }}
 
+/* ==================== Labels ==================== */
 QLabel {{
     background-color: transparent;
     color: {text};
+}}
+
+QLabel[cssClass="muted"] {{
+    color: {text_secondary};
+}}
+
+QLabel[cssClass="caption"] {{
+    color: {text_secondary};
+    font-size: {label_size}px;
+}}
+
+QLabel[cssClass="title"] {{
+    color: {text};
+    font-size: 18px;
+    font-weight: 700;
 }}
 
 /* ==================== Buttons ==================== */
@@ -285,6 +415,18 @@ QPushButton:disabled {{
     background-color: {btn_disabled_bg};
     color: {btn_disabled_text};
 }}
+
+QPushButton[cssClass="success"] {{
+    background-color: {success};
+    color: {text_on_primary};
+}}
+QPushButton[cssClass="success"]:hover   {{ background-color: {success_hover}; }}
+QPushButton[cssClass="success"]:pressed {{ background-color: {success_pressed}; }}
+QPushButton[cssClass="success"]:disabled {{
+    background-color: {btn_disabled_bg};
+    color: {btn_disabled_text};
+}}
+
 QPushButton[cssClass="warning"] {{
     background-color: {warning};
     color: {text_on_primary};
@@ -295,6 +437,7 @@ QPushButton[cssClass="warning"]:disabled {{
     background-color: {btn_disabled_bg};
     color: {btn_disabled_text};
 }}
+
 QPushButton[cssClass="danger"] {{
     background-color: {danger};
     color: {text_on_primary};
@@ -313,6 +456,7 @@ QPushButton[cssClass="secondary"] {{
 }}
 QPushButton[cssClass="secondary"]:hover   {{ background-color: {btn_secondary_hover}; }}
 QPushButton[cssClass="secondary"]:pressed {{ background-color: {btn_secondary_pressed}; }}
+QPushButton[cssClass="secondary"]:focus   {{ border: 1px solid {primary}; }}
 QPushButton[cssClass="secondary"]:disabled {{
     background-color: {btn_disabled_bg};
     color: {btn_disabled_text};
@@ -329,13 +473,56 @@ QPushButton[cssClass="ghost"]:hover {{
     background-color: {btn_secondary_hover};
     color: {text};
 }}
+QPushButton[cssClass="ghost"]:disabled {{
+    background-color: transparent;
+    color: {btn_disabled_text};
+}}
 
-/* ==================== Inputs ==================== */
-/* ==================== Checkboxes ==================== */
-QCheckBox {{
+/* Segment / chip: checkable pill (activity tabs, quick filters).
+   Usage: btn.setCheckable(True); make_segment(btn) */
+QPushButton[cssClass="segment"] {{
+    background-color: {surface};
+    color: {text_secondary};
+    border: 1px solid {border};
+    border-radius: 16px;
+    padding: 6px 16px;
+    font-weight: 600;
+    min-height: 20px;
+}}
+QPushButton[cssClass="segment"]:hover {{
+    background-color: {btn_secondary_hover};
+    color: {text};
+}}
+QPushButton[cssClass="segment"]:checked {{
+    background-color: {primary_soft};
+    color: {primary};
+    border: 1px solid {primary};
+}}
+QPushButton[cssClass="segment"]:disabled {{
+    background-color: {btn_disabled_bg};
+    color: {btn_disabled_text};
+    border: 1px solid {border};
+}}
+
+QToolButton {{
+    background-color: transparent;
+    color: {text};
+    border: none;
+    border-radius: {btn_r}px;
+    padding: 6px;
+}}
+QToolButton:hover   {{ background-color: {btn_secondary_hover}; }}
+QToolButton:pressed {{ background-color: {btn_secondary_pressed}; }}
+QToolButton:checked {{ background-color: {primary_soft}; }}
+
+/* ==================== Checkboxes & radios ==================== */
+QCheckBox, QRadioButton {{
     color: {text};
     background-color: transparent;
     spacing: 8px;
+}}
+QCheckBox:disabled, QRadioButton:disabled {{
+    color: {text_disabled};
 }}
 
 QCheckBox::indicator {{
@@ -345,19 +532,44 @@ QCheckBox::indicator {{
     border-radius: 4px;
     background-color: {surface};
 }}
-
 QCheckBox::indicator:hover {{
     border-color: {primary};
-    
-
 }}
-
 QCheckBox::indicator:checked {{
     background-color: {primary};
     border-color: {primary};
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==);
+    image: {check_icon};
 }}
-QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox, QTextEdit {{
+QCheckBox::indicator:checked:hover {{
+    background-color: {primary_hover};
+    border-color: {primary_hover};
+}}
+QCheckBox::indicator:disabled {{
+    background-color: {surface_alt};
+    border-color: {divider};
+}}
+
+QRadioButton::indicator {{
+    width: 18px;
+    height: 18px;
+    border: 2px solid {border};
+    border-radius: 11px;
+    background-color: {surface};
+}}
+QRadioButton::indicator:hover {{
+    border-color: {primary};
+}}
+QRadioButton::indicator:checked {{
+    border: 6px solid {primary};
+    background-color: {surface};
+}}
+QRadioButton::indicator:disabled {{
+    background-color: {surface_alt};
+    border-color: {divider};
+}}
+
+/* ==================== Inputs ==================== */
+QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox, QTextEdit, QPlainTextEdit {{
     border: 1px solid {border};
     border-radius: {input_r}px;
     padding: 8px 12px;
@@ -369,36 +581,65 @@ QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox, QTextEdit {{
     font-size: {body_size}px;
 }}
 
+QLineEdit:hover, QComboBox:hover, QDateEdit:hover,
+QDoubleSpinBox:hover, QSpinBox:hover, QTextEdit:hover, QPlainTextEdit:hover {{
+    border: 1px solid {text_disabled};
+}}
+
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus,
-QDoubleSpinBox:focus, QSpinBox:focus, QTextEdit:focus {{
+QDoubleSpinBox:focus, QSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{
     border: 1px solid {primary};
 }}
 
-QLineEdit::placeholder {{ color: {text_secondary}; }}
+QLineEdit:disabled, QComboBox:disabled, QDateEdit:disabled,
+QDoubleSpinBox:disabled, QSpinBox:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{
+    background-color: {surface_alt};
+    color: {text_disabled};
+    border: 1px solid {divider};
+}}
 
+QLineEdit:read-only {{
+    background-color: {surface_alt};
+}}
+
+/* Validation: widget.setProperty("invalid", True) then polish_widget(widget) */
+QLineEdit[invalid="true"], QComboBox[invalid="true"], QDateEdit[invalid="true"],
+QDoubleSpinBox[invalid="true"], QSpinBox[invalid="true"], QTextEdit[invalid="true"] {{
+    border: 1px solid {danger};
+}}
+
+/* Search variant: widget.setProperty("cssClass", "search") */
+QLineEdit[cssClass="search"] {{
+    background-color: {search_bg};
+    border: 1px solid {search_border};
+    border-radius: {RADIUS['md']}px;
+    padding: 8px 14px;
+}}
+QLineEdit[cssClass="search"]:hover {{
+    border: 1px solid {text_disabled};
+}}
+QLineEdit[cssClass="search"]:focus {{
+    background-color: {surface};
+    border: 1px solid {primary};
+}}
+
+/* Symmetric horizontal padding so the combo works in RTL and LTR */
 QComboBox {{
-    padding-right: 30px; /* Leave room for the arrow */
+    padding: 8px 30px;
 }}
 
 QComboBox::drop-down {{
     subcontrol-origin: padding;
-    subcontrol-position: top right;
+    subcontrol-position: center right;
     width: 30px;
-    border-left: none;
+    border: none;
+    background-color: transparent;
 }}
 
 QComboBox::down-arrow {{
-    /* A clean, white/light SVG chevron */
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iNiA5IDEyIDE1IDE4IDkiPjwvcG9seWxpbmU+PC9zdmc+);
+    image: {arrow_down};
     width: 16px;
     height: 16px;
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-    margin-right: 8px;
-}}
-
-QComboBox::down-arrow:on {{
-    /* Optional: rotate arrow when open (hard to do in QSS, so we'll skip, but this keeps it clean) */
 }}
 
 QComboBox QAbstractItemView {{
@@ -409,10 +650,45 @@ QComboBox QAbstractItemView {{
     selection-background-color: {primary_soft};
     selection-color: {text};
     padding: 4px;
+    outline: none;
 }}
 
-/* ==================== Tables ==================== */
-QTableWidget {{
+QComboBox QAbstractItemView::item {{
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: {RADIUS['xs']}px;
+}}
+
+/* ==================== Spin boxes & date edits ==================== */
+QDateEdit::drop-down {{
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 30px;
+    border: none;
+    background-color: transparent;
+}}
+
+QDateEdit::up-button, QSpinBox::up-button, QDoubleSpinBox::up-button,
+QDateEdit::down-button, QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    width: 20px;
+    border: none;
+    background-color: transparent;
+}}
+
+QDateEdit::up-arrow, QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: {arrow_up};
+    width: 12px;
+    height: 12px;
+}}
+
+QDateEdit::down-arrow, QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: {arrow_down};
+    width: 12px;
+    height: 12px;
+}}
+
+/* ==================== Tables (QTableWidget and QTableView) ==================== */
+QTableView {{
     border: 1px solid {border};
     border-radius: {card_r}px;
     gridline-color: {divider};
@@ -424,9 +700,18 @@ QTableWidget {{
     font-size: {table_size}px;
 }}
 
-QTableWidget::item {{
+QTableView::item {{
     padding: 10px 12px;
     border: none;
+}}
+
+QTableView::item:hover {{
+    background-color: {neutral_soft};
+}}
+
+QTableView::item:selected {{
+    background-color: {primary_soft};
+    color: {text};
 }}
 
 QHeaderView::section {{
@@ -438,25 +723,38 @@ QHeaderView::section {{
     font-weight: 600;
     font-size: {label_size}px;
 }}
-/* ==================== Spin Boxes & Date Edits ==================== */
-QDateEdit::up-button, QSpinBox::up-button, QDoubleSpinBox::up-button,
-QDateEdit::down-button, QSpinBox::down-button, QDoubleSpinBox::down-button {{
-    width: 20px;
+
+QHeaderView::section:hover {{
+    background-color: {btn_secondary_hover};
+    color: {text};
+}}
+
+QTableCornerButton::section {{
+    background-color: {surface_alt};
     border: none;
-    background-color: transparent;
+    border-bottom: 1px solid {border};
 }}
 
-QDateEdit::up-arrow, QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iMTggMTUgMTIgOSA2IDE1Ij48L3BvbHlsaW5lPjwvc3ZnPg==);
-    width: 12px;
-    height: 12px;
+/* ==================== Progress bars ====================
+   Set bar.setProperty("state", "success" | "warning" | "danger") and
+   polish_widget(bar). Use setTextVisible(False) for slim session bars. */
+QProgressBar {{
+    background-color: {divider};
+    border: none;
+    border-radius: 4px;
+    min-height: 8px;
+    max-height: 8px;
+    text-align: center;
+    color: transparent;
 }}
+QProgressBar::chunk {{
+    background-color: {primary};
+    border-radius: 4px;
+}}
+QProgressBar[state="success"]::chunk {{ background-color: {success}; }}
+QProgressBar[state="warning"]::chunk {{ background-color: {warning}; }}
+QProgressBar[state="danger"]::chunk  {{ background-color: {danger}; }}
 
-QDateEdit::down-arrow, QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iNiA5IDEyIDE1IDE4IDkiPjwvcG9seWxpbmU+PC9zdmc+);
-    width: 12px;
-    height: 12px;
-}}
 /* ==================== Tabs ==================== */
 QTabWidget::pane {{
     border: 1px solid {border};
@@ -470,7 +768,7 @@ QTabBar::tab {{
     color: {text_secondary};
     padding: 10px 20px;
     border-bottom: 2px solid transparent;
-    margin-right: 4px;
+    margin: 0px 2px;
     font-weight: 600;
     font-size: {body_size}px;
 }}
@@ -521,6 +819,7 @@ QScrollBar::handle:vertical {{
 }}
 QScrollBar::handle:vertical:hover {{ background: {text_secondary}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 
 QScrollBar:horizontal {{
     background: transparent;
@@ -534,6 +833,7 @@ QScrollBar::handle:horizontal {{
 }}
 QScrollBar::handle:horizontal:hover {{ background: {text_secondary}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 
 /* ==================== Tooltips ==================== */
 QToolTip {{
@@ -545,7 +845,22 @@ QToolTip {{
     font-size: {label_size}px;
 }}
 
-/* ==================== Date picker popup ==================== */
+/* ==================== Message boxes ==================== */
+QMessageBox {{
+    background-color: {surface};
+}}
+QMessageBox QLabel {{
+    color: {text};
+    background-color: transparent;
+}}
+QMessageBox QPushButton {{
+    min-width: 80px;
+}}
+
+/* ==================== Date picker popup ====================
+   QCalendarWidget's day grid is itself a QTableView, so it must be
+   explicitly shielded from the generic table rules above (item padding,
+   hover, header padding) — those were clipping the day numbers. */
 QCalendarWidget QWidget {{
     background-color: {surface};
     color: {text};
@@ -561,6 +876,41 @@ QCalendarWidget QAbstractItemView:enabled {{
 QCalendarWidget QAbstractItemView:disabled {{
     color: {text_disabled};
 }}
+QCalendarWidget QTableView#qt_calendar_calendarview {{
+    border: none;
+    border-radius: 0px;
+    background-color: {surface};
+    alternate-background-color: {surface};
+    selection-background-color: {primary};
+    selection-color: {text_on_primary};
+    outline: none;
+    font-size: {body_size}px;
+}}
+QCalendarWidget QTableView#qt_calendar_calendarview::item {{
+    padding: 0px;
+    margin: 1px;
+    border: none;
+    border-radius: 6px;
+}}
+QCalendarWidget QTableView#qt_calendar_calendarview::item:hover {{
+    background-color: {primary_soft};
+}}
+QCalendarWidget QTableView#qt_calendar_calendarview::item:selected {{
+    background-color: {primary};
+    color: {text_on_primary};
+}}
+QCalendarWidget QTableView#qt_calendar_calendarview::item:disabled {{
+    color: {text_disabled};
+}}
+QCalendarWidget QTableView#qt_calendar_calendarview QHeaderView::section {{
+    background-color: {surface_alt};
+    color: {text_secondary};
+    padding: 4px;
+    border: none;
+    border-bottom: 1px solid {divider};
+    font-weight: 600;
+    font-size: {label_size}px;
+}}
 QCalendarWidget QMenu {{
     background-color: {surface};
     color: {text};
@@ -573,30 +923,34 @@ QCalendarWidget QToolButton {{
     background-color: transparent;
     color: {text_on_primary};
     border: none;
+    border-radius: {RADIUS['xs']}px;
     padding: 4px 10px;
     font-weight: 600;
 }}
 QCalendarWidget QToolButton:hover {{
     background-color: {primary_hover};
-    border-radius: {RADIUS['xs']}px;
 }}
 QCalendarWidget QToolButton:pressed {{
     background-color: {primary_pressed};
-    border-radius: {RADIUS['xs']}px;
 }}
 QCalendarWidget QToolButton::menu-indicator {{ image: none; }}
+QCalendarWidget QSpinBox {{
+    background-color: transparent;
+    color: {text_on_primary};
+    border: none;
+    padding: 2px 6px;
+    min-height: 0px;
+    font-weight: 600;
+    selection-background-color: {primary_hover};
+    selection-color: {text_on_primary};
+}}
 QCalendarWidget QComboBox {{
     background-color: {surface};
     color: {text};
     border: 1px solid {border};
     border-radius: {RADIUS['xs']}px;
     padding: 2px 6px;
-}}
-QCalendarWidget QTableView QHeaderView::section {{
-    background-color: {surface_alt};
-    color: {text_secondary};
-    padding: 4px;
-    border: none;
+    min-height: 0px;
 }}
 """
 
@@ -781,15 +1135,6 @@ def theme() -> ThemeManager:
 
 
 # ---------------------------------------------------------------------------
-# Sweep
-# ---------------------------------------------------------------------------
-
-
-
-
-
-
-# ---------------------------------------------------------------------------
 # ThemedWidget
 # ---------------------------------------------------------------------------
 
@@ -866,9 +1211,17 @@ def polish_widget(widget):
 def make_danger(button):
     button.setProperty("cssClass", "danger")
     polish_widget(button)
+
+
 def make_warning(button):
     """Amber/warning styled button — for 'sensitive but reversible' actions."""
     button.setProperty("cssClass", "warning")
+    polish_widget(button)
+
+
+def make_success(button):
+    """Green button — for confirming / positive actions (renew, collect, save)."""
+    button.setProperty("cssClass", "success")
     polish_widget(button)
 
 
@@ -880,6 +1233,25 @@ def make_secondary(button):
 def make_ghost(button):
     button.setProperty("cssClass", "ghost")
     polish_widget(button)
+
+
+def make_segment(button):
+    """
+    Pill-style checkable button (activity tabs, quick-filter chips).
+    Call button.setCheckable(True) yourself; group them in a QButtonGroup
+    with setExclusive(True) for tab-like behaviour.
+    """
+    button.setProperty("cssClass", "segment")
+    polish_widget(button)
+
+
+def set_progress_state(bar, state: Optional[str]):
+    """
+    Colour a QProgressBar chunk: 'success' | 'warning' | 'danger' | None
+    (None = primary blue). Safe to call repeatedly.
+    """
+    bar.setProperty("state", state or "")
+    polish_widget(bar)
 
 
 # ---------------------------------------------------------------------------

@@ -102,6 +102,9 @@ LIGHT = {
     "surface_pressed":  "#E2E8F0",
     "text_primary":     "#172033",
     "text_on_accent":   "#FFFFFF",
+    "medal_gold": "#D4AF37",
+    "medal_silver": "#A8A8A8",
+    "medal_bronze": "#CD7F32",
 }
 
 # Dark theme — from the design brief, section 2.
@@ -182,6 +185,9 @@ DARK = {
     "surface_pressed":  "#3B4B66",
     "text_primary":     "#F3F4F6",
     "text_on_accent":   "#0B1220",
+    "medal_gold": "#FFD700",
+    "medal_silver": "#C0C0C0",
+    "medal_bronze": "#E89B5A"
 
 }
 

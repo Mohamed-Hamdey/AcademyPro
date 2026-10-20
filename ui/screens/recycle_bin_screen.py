@@ -291,7 +291,6 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         any_content = (
             len(players) > 0
             or len(subs) > 0
-            or len(users) > 0
             or len(acts) > 0
             or len(champs) > 0
         )
@@ -559,15 +558,27 @@ class RecycleBinScreen(ThemedWidget, QWidget):
                     warn(self, t("recycle.err_title"), str(e))
 
     def _on_empty_bin(self):
+        # Guard: even if the button is somehow enabled while empty, do
+        # nothing rather than bothering the user with a confirm dialog.
+        if not self.empty_button.isEnabled():
+            return
         if ask(self, t("recycle.confirm_empty_title"), t("recycle.confirm_empty_body")):
+            # Disable immediately to prevent double-clicks while the
+            # (potentially slow) purge runs. refresh() will re-enable
+            # it if the bin is still non-empty afterwards.
+            self.empty_button.setEnabled(False)
+            self.empty_button.repaint()
             try:
-                # FIXED: Include users in the empty recycle bin logic
                 summary = archive_service.empty_recycle_bin()
                 info(self, t("recycle.empty_done_title"),
-                     t("recycle.empty_done_body", players=summary["players"], subs=summary["subscriptions"]))
+                     t("recycle.empty_done_body",
+                          players=summary["players"],
+                          subs=summary["subscriptions"]))
                 self.refresh()
             except Exception as e:
                 warn(self, t("recycle.err_title"), str(e))
+                # Re-enable on error so the user can retry.
+                self.empty_button.setEnabled(True)
 
 class _TypedConfirmDialog(ThemedWidget, QDialog):
     def __init__(self, parent, title, body):

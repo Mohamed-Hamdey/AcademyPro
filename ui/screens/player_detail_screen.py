@@ -625,6 +625,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             # Reactivate
             if ask(self, t("detail.msg.reactivate_title"), t("detail.msg.reactivate_body")):
                 subscriptions_repo.set_status(sub.subscription_id, "active")
+                # Log the reactivate action
                 audit_service.record(
                     "subscription.reactivate",
                     target_type="subscription",
@@ -634,10 +635,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         else:
             # Suspend
             if ask(self, t("detail.msg.suspend_title"), t("detail.msg.suspend_body")):
+                # subscription_service.suspend() already records the audit log internally.
                 subscription_service.suspend(sub.subscription_id)
-                audit_service.subscription_suspended(subscription_id=sub.subscription_id)
                 self.refresh()
-
     def _on_record_payment(self):
         sub = self._selected_sub()
         if sub is None:

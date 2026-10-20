@@ -68,7 +68,6 @@ def activate(
     )
     new_sub_id = subscriptions_repo.create(sub)
 
-    # Log the initial payment into the ledger if there is one
     if payment_amount and payment_amount > 0:
         try:
             from services import payment_service
@@ -84,6 +83,25 @@ def activate(
             logging.getLogger(__name__).exception(
                 "Failed to log initial payment"
             )
+
+    # Audit: subscription activation (initial creation).
+    try:
+        from services import audit_service
+        audit_service.record(
+            "subscription.activate",
+            target_type="subscription",
+            target_id=new_sub_id,
+            details={
+                "player_id": player_id,
+                "activity_id": activity_id,
+                "sessions": sessions_total,
+                "payment_amount": payment_amount,
+            },
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Audit: failed to log subscription.activate"
+        )
 
     return new_sub_id
 
@@ -128,6 +146,23 @@ def record_payment(subscription_id: int, payment_amount: float, payment_date: da
         new_expiry.isoformat(),
         new_status,
     )
+        # Audit: renewal / payment record.
+    try:
+        from services import audit_service
+        audit_service.record(
+            "subscription.record_payment",
+            target_type="subscription",
+            target_id=subscription_id,
+            details={
+                "player_id": sub.player_id,
+                "amount": payment_amount,
+                "new_expiry": new_expiry.isoformat(),
+            },
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Audit: failed to log subscription.record_payment"
+        )
 
 
 def update(
@@ -439,6 +474,17 @@ def get_display_statuses(player_id: int) -> list[dict]:
 
 def suspend(subscription_id: int) -> None:
     subscriptions_repo.set_status(subscription_id, "suspended")
+    try:
+        from services import audit_service
+        audit_service.record(
+            "subscription.suspend",
+            target_type="subscription",
+            target_id=subscription_id,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Audit: failed to log subscription.suspend"
+        )
 
 
 def adjust_sessions(subscription_id: int, new_value: int) -> None:
@@ -459,3 +505,14 @@ def get_history(player_id: int) -> list[Subscription]:
 
 def mark_expired(subscription_id: int) -> None:
     subscriptions_repo.set_status(subscription_id, "expired")
+    try:
+        from services import audit_service
+        audit_service.record(
+            "subscription.expire",
+            target_type="subscription",
+            target_id=subscription_id,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Audit: failed to log subscription.expire"
+        )

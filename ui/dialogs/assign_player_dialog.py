@@ -131,19 +131,34 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         """
         query = self.search_input.text().strip()
 
-        # Activity is required on championships (locked-in decision).
-        # Defensive fallback: if somehow None, show ALL players.
-        if self.champ and self.champ.activity_id is not None:
-            rows = players_repo.search_with_details_for_activity(
-                self.champ.activity_id, query,
-            )
-        else:
-            rows = players_repo.search_with_details(query)
+
+        rows = players_repo.search_with_details(query)
 
         # Filter out players already in the championship.
         rows = [r for r in rows if r["player"].player_id not in self.existing_ids]
 
         self.table.setRowCount(len(rows))
+
+        # --- NEW: عرض رسالة إذا كانت القائمة فارغة ---
+        if not rows:
+            self.table.hide()
+            if not hasattr(self, 'empty_label'):
+                from qtpy.QtWidgets import QLabel
+                self.empty_label = QLabel(self)
+                self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.empty_label.setStyleSheet("color: gray; font-style: italic;")
+                root = self.layout()
+                if root:
+                    root.addWidget(self.empty_label)
+            
+            self.empty_label.setText(t("champ.assign.empty"))
+            self.empty_label.show()
+            return
+        else:
+            self.table.show()
+            if hasattr(self, 'empty_label'):
+                self.empty_label.hide()
+        # ---------------------------------------------
 
         for i, r in enumerate(rows):
             p = r["player"]

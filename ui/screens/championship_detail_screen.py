@@ -146,6 +146,13 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
 
         self.title_label.setText(champ.name)
         self.current_champ = champ
+        
+        # --- NEW: عرض النشاط المرتبط بالبطولة ---
+        from services import activity_service
+        act = activity_service.get(champ.activity_id) if champ.activity_id else None
+        act_name = activity_service.get_localized_name(act) if act else "—"
+        self.title_label.setText(f"{champ.name}\n{t('champ.detail.activity', activity=act_name)}")
+        # -----------------------------------------
 
         parts = championship_service.get_participants(self.champ_id)
         self._rows = parts
@@ -286,6 +293,20 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
             t("champ.confirm.remove_msg", name=p["full_name"]),
         ):
             championships_repo.remove_participant(p["id"])
+            
+            # --- NEW AUDIT CALL ---
+            try:
+                from services import audit_service
+                audit_service.record(
+                    "championship.remove_participant",
+                    target_type="championship",
+                    target_id=self.champ_id,
+                    details={"player_name": p["full_name"]},
+                )
+            except Exception:
+                pass
+            # ----------------------
+            
             self.refresh()
 
     def _on_edit_result(self):
@@ -332,6 +353,20 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
         obj = championships_repo.get_participant(p["id"])
         if obj is None:
             return
-        obj.result = chosen_key              # ← key or None, never translated text
+        obj.result = chosen_key
         championships_repo.update_participant(obj)
+        
+        # --- NEW AUDIT CALL ---
+        try:
+            from services import audit_service
+            audit_service.record(
+                "championship.edit_result",
+                target_type="championship",
+                target_id=self.champ_id,
+                details={"player_name": p["full_name"], "result": chosen_key},
+            )
+        except Exception:
+            pass
+        # ----------------------
+        
         self.refresh()

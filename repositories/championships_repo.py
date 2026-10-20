@@ -180,3 +180,72 @@ def get_player_championships(player_id: int) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Additions for the Championship Redesign (Phase 1.2)
+# ---------------------------------------------------------------------------
+
+def check_duplicate(name: str, event_date: str, activity_id: int, exclude_id: int = None) -> bool:
+    """
+    Returns True if a championship with the same name, date, and activity
+    already exists (excluding the current ID if editing).
+    """
+    conn = get_connection()
+    try:
+        query = """
+            SELECT 1 FROM championships 
+            WHERE name = ? AND event_date = ? AND activity_id = ? 
+            AND archived_at IS NULL
+        """
+        params = [name, event_date, activity_id]
+        
+        if exclude_id is not None:
+            query += " AND championship_id != ?"
+            params.append(exclude_id)
+            
+        row = conn.execute(query, params).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def get_bulk_metrics(include_archived: bool = False) -> dict[int, dict]:
+    """
+    Returns a dictionary mapping championship_id to their metrics:
+    { champ_id: { "participants": N, "gold": N, "silver": N, "bronze": N } }
+    
+    One single query to prevent N+1 issues on the list screen.
+    """
+    conn = get_connection()
+    try:
+        where = "" if include_archived else "WHERE c.archived_at IS NULL"
+        
+        # We use LEFT JOIN so championships with 0 participants still appear.
+        # We count results by using SUM(CASE WHEN...) logic.
+        rows = conn.execute(
+            f"""
+            SELECT 
+                c.championship_id,
+                COUNT(cp.id) AS participants,
+                SUM(CASE WHEN cp.result = 'gold' THEN 1 ELSE 0 END) AS gold,
+                SUM(CASE WHEN cp.result = 'silver' THEN 1 ELSE 0 END) AS silver,
+                SUM(CASE WHEN cp.result = 'bronze' THEN 1 ELSE 0 END) AS bronze
+            FROM championships c
+            LEFT JOIN championship_players cp ON c.championship_id = cp.championship_id
+            {where}
+            GROUP BY c.championship_id
+            """
+        ).fetchall()
+        
+        return {
+            r["championship_id"]: {
+                "participants": r["participants"],
+                "gold": r["gold"] or 0,
+                "silver": r["silver"] or 0,
+                "bronze": r["bronze"] or 0,
+            }
+            for r in rows
+        }
+    finally:
+        conn.close()

@@ -269,6 +269,21 @@ class ExpensesScreen(ThemedWidget, QWidget):
         dlg = ExpenseFormDialog(parent=self)
         if dlg.exec():
             self.refresh()
+            # --- NEW AUDIT CALL ---
+            # Note: If you can access the newly created expense ID from the 
+            # dialog, add it to target_id. For now we just log the action.
+            try:
+                from services import audit_service
+                audit_service.record(
+                    "expense.create",
+                    target_type="expense",
+                    target_id=None, 
+                    details={"note": "Created via Expenses Screen"},
+                )
+            except Exception:
+                pass
+            # ----------------------
+        
 
     def _on_edit(self):
         e = self._selected()
@@ -277,6 +292,18 @@ class ExpensesScreen(ThemedWidget, QWidget):
         dlg = ExpenseFormDialog(expense=e, parent=self)
         if dlg.exec():
             self.refresh()
+            # --- NEW AUDIT CALL ---
+            try:
+                from services import audit_service
+                audit_service.record(
+                    "expense.update",
+                    target_type="expense",
+                    target_id=e.expense_id,
+                    details={"amount": e.amount},
+                )
+            except Exception:
+                pass
+            # ----------------------
 
     def _on_delete(self):
         e = self._selected()

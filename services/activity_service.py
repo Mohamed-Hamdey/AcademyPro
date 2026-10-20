@@ -60,8 +60,18 @@ def create(name_en: str, name_ar: str, default_days: list[str],
         color=color,
         active=True,
     )
-    return activities_repo.create(activity)
-
+    new_id = activities_repo.create(activity)
+    try:
+        from services import audit_service
+        audit_service.record(
+            "activity.create",
+            target_type="activity",
+            target_id=new_id,
+            details={"name_en": name_en, "name_ar": name_ar},
+        )
+    except Exception:
+        pass
+    return new_id
 
 def update(activity_id: int, name_en: str, name_ar: str,
            default_days: list[str], color: str = None) -> None:
@@ -89,18 +99,33 @@ def update(activity_id: int, name_en: str, name_ar: str,
     existing.default_days = default_days
     existing.color = color
     activities_repo.update(existing)
-
+    try:
+        from services import audit_service
+        audit_service.record(
+            "activity.update",
+            target_type="activity",
+            target_id=activity_id,
+            details={"name_en": name_en},
+        )
+    except Exception:
+        pass
 
 def deactivate(activity_id: int) -> None:
-    """
-    Soft-delete: sets active = False. Existing subscriptions keep working;
-    the activity is just hidden from new-subscription pickers.
-    """
     activities_repo.set_active(activity_id, False)
+    try:
+        from services import audit_service
+        audit_service.record("activity.archive", target_type="activity", target_id=activity_id)
+    except Exception:
+        pass
 
 
 def reactivate(activity_id: int) -> None:
     activities_repo.set_active(activity_id, True)
+    try:
+        from services import audit_service
+        audit_service.record("activity.restore", target_type="activity", target_id=activity_id)
+    except Exception:
+        pass
 
 
 def count_references(activity_id: int) -> int:
@@ -117,3 +142,8 @@ def delete(activity_id: int) -> None:
     if refs > 0:
         raise ValueError("Cannot delete activity with existing subscriptions.")
     activities_repo.delete(activity_id)
+    try:
+        from services import audit_service
+        audit_service.record("activity.delete", target_type="activity", target_id=activity_id)
+    except Exception:
+        pass
