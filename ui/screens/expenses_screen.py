@@ -16,7 +16,7 @@ from qtpy.QtWidgets import (
     QFrame,
 )
 from ui.components import SectionCard, Toolbar, EmptyState, KpiCard, BarList
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt,QTimer
 from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -47,11 +47,24 @@ class ExpensesScreen(ThemedWidget, QWidget):
         # Deferred to first show — see showEvent.
         self._init_theme()
 
+
     def showEvent(self, event):
         super().showEvent(event)
+
         if not self._loaded:
             self._loaded = True
+
+            # Load data after the screen has been shown.
+
+            QTimer.singleShot(0, self._initial_load)
+
+
+    def _initial_load(self):
+        try:
             self.refresh()
+        except Exception:
+            self._loaded = False
+            raise
 
     # ---------- UI ----------
 
@@ -186,10 +199,14 @@ class ExpensesScreen(ThemedWidget, QWidget):
         self._selected_month = m
         self.refresh()
 
+
     def refresh(self):
-        self._rows = expense_service.list_for_month(
-            self._selected_year, self._selected_month
+        rows = expense_service.list_for_month(
+            self._selected_year,
+            self._selected_month,
         )
+
+        self._rows = rows
         self._render()
 
     def _render(self):

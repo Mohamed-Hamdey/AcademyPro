@@ -1,27 +1,29 @@
 """
-Championship Detail Screen (Master-Detail).
+Championship Detail Screen — KPI Strip, Medal Pills, and Export.
 """
 import os
 import sys
+import csv
+from datetime import date
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QTableWidgetItem, QInputDialog,
+    QTableWidgetItem, QInputDialog, QFileDialog, QTableWidget
 )
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
-
+from ui.components import SectionCard, KpiCard, EmptyState, Toolbar, PillDelegate
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from repositories import championships_repo
-from services import championship_service
+from services import championship_service, activity_service
 from ui.dialogs.assign_player_dialog import AssignPlayerDialog
 from ui.dialogs.championship_form_dialog import ChampionshipFormDialog
 from ui.table_helpers import make_standard_table
-from ui.components import SectionCard, KpiCard
+from ui.components import SectionCard, KpiCard, EmptyState, Toolbar
 from ui.theme import theme, ThemedWidget, make_danger, make_secondary
-from ui.design import SPACING
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
-from ui.message_box import info, ask
-
+from ui.message_box import info, ask, warn
+from ui.dialogs.edit_result_dialog import EditResultDialog
 
 class ChampionshipDetailScreen(ThemedWidget, QWidget):
     def __init__(self, championship_id, on_back=None, parent=None):
@@ -33,16 +35,12 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
         self.refresh()
         self._init_theme()
 
-    # ------------------------------------------------------------------
-    # UI
-    # ------------------------------------------------------------------
-
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(SPACING["lg"])
 
-        # --- Header row: Title | Edit | Delete | Back ---
+        # --- Header ---
         header = QHBoxLayout()
         self.title_label = QLabel()
         header.addWidget(self.title_label)
@@ -53,64 +51,73 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
         self.edit_btn.clicked.connect(self._on_edit)
         header.addWidget(self.edit_btn)
 
-        self.delete_btn = QPushButton(t("champ.detail.delete"))
-        make_danger(self.delete_btn)
-        self.delete_btn.clicked.connect(self._on_delete)
-        header.addWidget(self.delete_btn)
-
         self.back_btn = QPushButton(t("champ.detail.back"))
         self.back_btn.clicked.connect(self._on_back)
         header.addWidget(self.back_btn)
-
         root.addLayout(header)
 
-        # --- KPI strip ---
+        # --- KPI Strip ---
         kpi_row = QHBoxLayout()
-        self.participants_kpi = KpiCard(
-            t("champ.detail.participants"), "0", value_color="primary"
-        )
-        self.fees_kpi = KpiCard(
-            t("champ.detail.total_fees"), "0 EGP", value_color="success"
-        )
-        kpi_row.addWidget(self.participants_kpi, stretch=1)
-        kpi_row.addWidget(self.fees_kpi, stretch=1)
+        kpi_row.setSpacing(SPACING["sm"])
+        
+        self.kpi_participants = KpiCard(t("champ.detail.kpi.participants"), "0")
+        self.kpi_gold = KpiCard(t("champ.detail.kpi.gold"), "0", value_color="medal_gold")
+        self.kpi_silver = KpiCard(t("champ.detail.kpi.silver"), "0", value_color="medal_silver")
+        self.kpi_bronze = KpiCard(t("champ.detail.kpi.bronze"), "0", value_color="medal_bronze")
+        self.kpi_fee = KpiCard(t("champ.detail.kpi.fee"), "0 EGP")
+        
+        for kpi in (self.kpi_participants, self.kpi_gold, self.kpi_silver, self.kpi_bronze, self.kpi_fee):
+            kpi_row.addWidget(kpi, stretch=1)
         root.addLayout(kpi_row)
 
-        # --- Participant table card ---
+        # --- Table Card ---
         self.table_card = SectionCard(title=t("champ.detail.assigned_players"))
-
+        
         self.table = make_standard_table(
             headers=[
                 t("champ.col.player"),
-                t("champ.col.weight"),
                 t("champ.col.belt"),
+                t("champ.col.weight"),
                 t("champ.col.result"),
             ],
-            column_modes=["stretch", "resize", "resize", "resize"],
+            # Give Result a healthy fixed width (e.g., 100px)
+            column_modes=["stretch", "resize", "resize", "fixed"],
             parent=self,
         )
+        self.table.setColumnWidth(3, 110)
+        self._pill_delegate = PillDelegate(self.table)
+        self.table.setItemDelegateForColumn(3, self._pill_delegate)
+        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.itemDoubleClicked.connect(self._on_edit_result)
         self.table.itemSelectionChanged.connect(self._update_actions)
         self.table_card.body.addWidget(self.table)
 
-        # --- Action row ---
-        actions = QHBoxLayout()
+        self.empty_label = EmptyState(icon="👥", message=t("champ.detail.empty"))
+        self.empty_label.hide()
+        self.table_card.body.addWidget(self.empty_label)
 
+        # --- Actions Row ---
+        actions = QHBoxLayout()
         self.remove_btn = QPushButton(t("champ.detail.remove"))
         make_danger(self.remove_btn)
         self.remove_btn.clicked.connect(self._on_remove)
         self.remove_btn.setEnabled(False)
-
-        self.edit_result_btn = QPushButton(t("champ.detail.edit_result"))
-        make_secondary(self.edit_result_btn)
-        self.edit_result_btn.clicked.connect(self._on_edit_result)
-        self.edit_result_btn.setEnabled(False)
-
-        self.assign_btn = QPushButton(t("champ.detail.assign"))
+        
+        self.assign_btn = QPushButton(t("champ.detail.action.assign"))
         self.assign_btn.clicked.connect(self._on_assign)
+        
+        self.export_btn = QPushButton(t("champ.detail.export"))
+        make_secondary(self.export_btn)
+        self.export_btn.clicked.connect(self._on_export)
+        
+        self.delete_btn = QPushButton(t("champ.detail.action.delete"))
+        make_danger(self.delete_btn)
+        self.delete_btn.clicked.connect(self._on_delete)
 
-        actions.addWidget(self.edit_result_btn)
+        actions.addWidget(self.delete_btn)
         actions.addWidget(self.remove_btn)
         actions.addStretch()
+        actions.addWidget(self.export_btn)
         actions.addWidget(self.assign_btn)
         self.table_card.body.addLayout(actions)
 
@@ -118,9 +125,7 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
 
     def restyle(self):
         tm = theme()
-        self.title_label.setStyleSheet(
-            f"font-size: 24px; font-weight: 700; color: {tm.color('text')};"
-        )
+        self.title_label.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {tm.color('text')};")
         self.table.setStyleSheet(
             f"QTableWidget {{"
             f"  selection-background-color: {tm.color('primary_soft')};"
@@ -130,243 +135,162 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
             f"  background-color: {tm.color('primary_soft')};"
             f"  color: {tm.color('text')};"
             f"}}"
-            f"QTableWidget::item:hover:!selected {{"
-            f"  background-color: {tm.color('surface_alt')};"
-            f"}}"
         )
-
-    # ------------------------------------------------------------------
-    # Data
-    # ------------------------------------------------------------------
 
     def refresh(self):
         champ = championships_repo.get_championship(self.champ_id)
-        if not champ:
-            return
-
-        self.title_label.setText(champ.name)
+        if not champ: return
         self.current_champ = champ
         
-        # --- NEW: عرض النشاط المرتبط بالبطولة ---
-        from services import activity_service
         act = activity_service.get(champ.activity_id) if champ.activity_id else None
         act_name = activity_service.get_localized_name(act) if act else "—"
-        self.title_label.setText(f"{champ.name}\n{t('champ.detail.activity', activity=act_name)}")
-        # -----------------------------------------
+        self.title_label.setText(f"{champ.name} · {act_name}")
+        
+        self._rows = championship_service.get_participants(self.champ_id)
+        
+        # Calculate KPIs
+        p_count = len(self._rows)
+        golds = sum(1 for p in self._rows if p.get("result") == "gold")
+        silvers = sum(1 for p in self._rows if p.get("result") == "silver")
+        bronzes = sum(1 for p in self._rows if p.get("result") == "bronze")
+        
+        self.kpi_participants.set_value(str(p_count))
+        self.kpi_gold.set_value(str(golds))
+        self.kpi_silver.set_value(str(silvers))
+        self.kpi_bronze.set_value(str(bronzes))
+        
+        # Fee KPI (per player and expected total)
+        fee = champ.entry_fee or 0
+        expected_total = fee * p_count
+        self.kpi_fee.set_value(f"{fee:,.0f} EGP")
+        self.kpi_fee.set_subtitle(t("champ.detail.kpi.fee_total", total=f"{expected_total:,.0f} EGP"))
 
-        parts = championship_service.get_participants(self.champ_id)
-        self._rows = parts
-
-        self.participants_kpi.set_value(str(len(parts)))
-        total_fees = len(parts) * (champ.entry_fee or 0)
-        self.fees_kpi.set_value(f"{total_fees:,.0f} EGP")
-
-        self.table.setRowCount(len(parts))
-        for i, p in enumerate(parts):
+        # Populate Table
+        self.table.setRowCount(len(self._rows))
+        for i, p in enumerate(self._rows):
+            # 1. Player Name
             name_item = QTableWidgetItem(p["full_name"])
             name_item.setData(Qt.ItemDataRole.UserRole, p["id"])
             self.table.setItem(i, 0, name_item)
-
+            
+            # 2. Weight
             weight = p.get("weight_kg")
-            self.table.setItem(
-                i, 1,
-                QTableWidgetItem(f"{weight} kg" if weight else "—"),
-            )
+            self.table.setItem(i, 1, QTableWidgetItem(f"{weight} kg" if weight else "—"))
+            
+            # 3. Belt
+            belt = p.get("belt") or "—"
+            if belt != "—": belt = t(f"belt.{belt.lower()}")
+            self.table.setItem(i, 2, QTableWidgetItem(belt))
+            
+            # 4. Result (THE FIX: Pass as a Dict for the Delegate!)
+            result = p.get("result")
+            result_item = QTableWidgetItem()
+            
+            if result:
+                # The delegate needs "text" and "kind"
+                result_item.setData(
+                    Qt.ItemDataRole.UserRole, 
+                    {"text": t(f"result.{result}"), "kind": result}
+                )
+            else:
+                result_item.setText("—")
+                result_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Passing a None kind tells the delegate to just draw plain text
+                result_item.setData(Qt.ItemDataRole.UserRole, None) 
 
-            self.table.setItem(i, 2, QTableWidgetItem(self._fmt_belt(p.get("belt"))))
-            self.table.setItem(i, 3, QTableWidgetItem(self._fmt_result(p.get("result"))))
+            self.table.setItem(i, 3, result_item)
 
+        # --- MOVED OUTSIDE THE LOOP ---
+        # Apply the delegate and column widths ONCE, not per row.
+        self.table.setColumnWidth(3, 110)
+        self._pill_delegate = PillDelegate(self.table)
+        self.table.setItemDelegateForColumn(3, self._pill_delegate)
+        self.table.verticalHeader().setDefaultSectionSize(36)
+
+        # Toggle Empty State
+        if self._rows:
+            self.table.show()
+            self.empty_label.hide()
+        else:
+            self.table.hide()
+            self.empty_label.show()
+            
         self._update_actions()
-
-    # ---------- display helpers ----------
-
-    @staticmethod
-    def _fmt_belt(raw):
-        """
-        Belt stored as a lowercase key ('white'..'black') since T5.
-        Falls back to the raw value if unknown (legacy safety).
-        """
-        if not raw:
-            return "—"
-        key = str(raw).strip().lower()
-        known = {"white", "yellow", "orange", "green", "blue", "brown", "black"}
-        if key in known:
-            translated = t(f"belt.{key}")
-            # i18n helper may return the key itself on miss — fall back to raw.
-            return translated if translated and translated != f"belt.{key}" else raw
-        return raw
-
-    @staticmethod
-    def _fmt_result(raw):
-        """Same idea for result ('gold'|'silver'|'bronze'|'participant')."""
-        if not raw:
-            return "—"
-        key = str(raw).strip().lower()
-        known = {"gold", "silver", "bronze", "participant"}
-        if key in known:
-            translated = t(f"result.{key}")
-            return translated if translated and translated != f"result.{key}" else raw
-        return raw
-
-    # ------------------------------------------------------------------
-    # Selection
-    # ------------------------------------------------------------------
 
     def _selected_participant(self):
         rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
+        if not rows: return None
         idx = rows[0].row()
-        if idx < 0 or idx >= len(self._rows):
-            return None
-        return self._rows[idx]
+        if 0 <= idx < len(self._rows): return self._rows[idx]
+        return None
 
     def _update_actions(self):
-        has = self._selected_participant() is not None
-        self.remove_btn.setEnabled(has)
-        self.edit_result_btn.setEnabled(has)
-
-    # ------------------------------------------------------------------
-    # Actions
-    # ------------------------------------------------------------------
+        self.remove_btn.setEnabled(self._selected_participant() is not None)
 
     def _on_back(self):
-        if self.on_back:
-            self.on_back()
+        if self.on_back: self.on_back()
 
     def _on_edit(self):
-        # Snapshot participant count so we can detect the repo's cascade
-        # auto-removal (activity change → players without a matching sub
-        # are deleted by update_championship()).
-        before_count = len(self._rows)
-
         dlg = ChampionshipFormDialog(self.current_champ, parent=self)
-        if not dlg.exec():
-            return
-
-        self.refresh()
-        after_count = len(self._rows)
-
-        if after_count < before_count:
-            info(
-                self,
-                t("champ.detail.cascade.title"),
-                t("champ.detail.cascade.body", n=before_count - after_count),
-            )
+        if dlg.exec(): self.refresh()
 
     def _on_delete(self):
-        """
-        Soft-delete → archive the championship → return to list.
-        Never calls delete_championship() here; that is reserved for
-        'delete forever' from the Recycle Bin.
-        """
-        champ = getattr(self, "current_champ", None)
-        if champ is None:
-            return
-        if not ask(
-            self,
-            t("champ.confirm.delete_title"),
-            t("champ.confirm.delete_msg", name=champ.name),
-        ):
-            return
-        try:
-            championships_repo.archive_championship(champ.championship_id)
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception(
-                "Failed to archive championship %s", champ.championship_id
-            )
-            return
-        self._on_back()
+        if ask(self, t("champ.confirm.delete_champ_title"), t("champ.confirm.delete_champ_msg", name=self.current_champ.name)):
+            championships_repo.archive_championship(self.champ_id)
+            self._on_back()
 
     def _on_assign(self):
         existing_ids = [p["player_id"] for p in self._rows]
         dlg = AssignPlayerDialog(self.champ_id, existing_ids, parent=self)
-        if dlg.exec():
-            self.refresh()
+        if dlg.exec(): self.refresh()
 
     def _on_remove(self):
         p = self._selected_participant()
-        if p and ask(
-            self,
-            t("champ.confirm.remove_title"),
-            t("champ.confirm.remove_msg", name=p["full_name"]),
-        ):
+        if p and ask(self, t("champ.confirm.remove_title"), t("champ.confirm.remove_msg", name=p['full_name'])):
             championships_repo.remove_participant(p["id"])
-            
-            # --- NEW AUDIT CALL ---
-            try:
-                from services import audit_service
-                audit_service.record(
-                    "championship.remove_participant",
-                    target_type="championship",
-                    target_id=self.champ_id,
-                    details={"player_name": p["full_name"]},
-                )
-            except Exception:
-                pass
-            # ----------------------
-            
             self.refresh()
 
-    def _on_edit_result(self):
+    def _on_edit_result(self, item):
         p = self._selected_participant()
-        if not p:
+        if not p: return
+        
+        # Open the custom themed dialog instead of QInputDialog
+        current_res = p.get("result")
+        dlg = EditResultDialog(current_res, p["full_name"], parent=self)
+        
+        if dlg.exec() == dlg.DialogCode.Accepted:
+            new_res = dlg.get_result()
+            
+            from models.championship import ChampionshipParticipant
+            obj = championships_repo.get_participant(p["id"])
+            if obj:
+                obj.result = new_res
+                championships_repo.update_participant(obj)
+                self.refresh()
+
+    def _on_export(self):
+        if not self._rows:
+            info(self, t("audit.export.empty_title"), t("audit.export.empty_body"))
             return
-
-        # Present translated labels, but store the KEY.
-        choices = [
-            ("gold",        t("result.gold")),
-            ("silver",      t("result.silver")),
-            ("bronze",      t("result.bronze")),
-            ("participant", t("result.participant")),
-            (None,          t("result.none")),
-        ]
-        labels = [label for _, label in choices]
-
-        current_key = str(p.get("result") or "").strip().lower()
-        current_idx = 0
-        for i, (key, _) in enumerate(choices):
-            if key == current_key:
-                current_idx = i
-                break
-
-        chosen_label, ok = QInputDialog.getItem(
-            self,
-            t("champ.detail.edit_result"),
-            t("champ.col.result"),
-            labels,
-            current_idx,
-            False,
+            
+        path, _ = QFileDialog.getSaveFileName(
+            self, t("champ.detail.export_title"),
+            f"championship_{self.champ_id}_{date.today().isoformat()}.csv",
+            "CSV (*.csv)"
         )
-        if not ok or not chosen_label:
-            return
-
-        # Map the chosen label back to its key.
-        chosen_key = None
-        for key, label in choices:
-            if label == chosen_label:
-                chosen_key = key
-                break
-
-        from models.championship import ChampionshipParticipant
-        obj = championships_repo.get_participant(p["id"])
-        if obj is None:
-            return
-        obj.result = chosen_key
-        championships_repo.update_participant(obj)
+        if not path: return
         
-        # --- NEW AUDIT CALL ---
         try:
-            from services import audit_service
-            audit_service.record(
-                "championship.edit_result",
-                target_type="championship",
-                target_id=self.champ_id,
-                details={"player_name": p["full_name"], "result": chosen_key},
-            )
-        except Exception:
-            pass
-        # ----------------------
-        
-        self.refresh()
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow([t("champ.col.player"), t("champ.col.belt"), t("champ.col.weight"), t("champ.col.result")])
+                for p in self._rows:
+                    w.writerow([
+                        p["full_name"],
+                        p.get("belt", ""),
+                        p.get("weight_kg", ""),
+                        p.get("result", "")
+                    ])
+            info(self, t("msg.save"), t("champ.detail.export_done", path=path))
+        except Exception as e:
+            warn(self, t("msg.error"), str(e))

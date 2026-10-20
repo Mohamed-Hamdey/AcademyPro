@@ -1061,7 +1061,30 @@
 "champ.menu.duplicate_msg": "أدخل التاريخ الجديد للبطولة المنسوخة (YYYY-MM-DD):",
 "champ.card.participants": "{n} لاعب",
 "champ.empty.no_results": "لا توجد بطولات تطابق بحثك.",
-"champ.empty.clear": "مسح البحث"
+"champ.empty.clear": "مسح البحث",
+"champ.detail.activity": "النشاط: {activity}",
+"champ.detail.kpi.participants": "المشاركون",
+"champ.detail.kpi.gold": "ذهبية",
+"champ.detail.kpi.silver": "فضية",
+"champ.detail.kpi.bronze": "برونزية",
+"champ.detail.kpi.fee": "رسوم الاشتراك",
+"champ.detail.kpi.fee_per": "{fee} / لاعب",
+"champ.detail.kpi.fee_total": "إجمالي متوقع: {total}",
+"champ.detail.export": "تصدير النتائج",
+"champ.detail.export_csv": "تصدير CSV",
+"champ.detail.export_title": "حفظ النتائج",
+"champ.detail.export_done": "تم حفظ النتائج في: {path}",
+"champ.detail.empty": "لا يوجد لاعبون معينون في هذه البطولة بعد.",
+"champ.detail.action.assign": "تعيين لاعبين",
+"champ.detail.action.delete": "حذف البطولة",
+"champ.result.none": "—",
+"champ.confirm.delete_champ_title": "حذف البطولة",
+"champ.assign.select_all": "تحديد الكل",
+"champ.assign.already": "معين مسبقاً",
+"champ.assign.btn": "تعيين ({n})",
+"champ.assign.weight_suffix": " كجم",
+"checkin.search.required": "الرجاء كتابة اسم أو رقم للبحث.",
+"champ.confirm.delete_champ_msg": "هل أنت متأكد من حذف «{name}»؟ سيتم حذف كل نتائج اللاعبين نهائياً."
 
 
 

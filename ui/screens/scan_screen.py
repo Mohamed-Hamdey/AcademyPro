@@ -238,6 +238,12 @@ class ScanScreen(ThemedWidget, QWidget):
 
         self.manual_search_button = QPushButton(t("checkin.search.button"))
         self.manual_search_button.clicked.connect(self._on_manual_search)
+                # Add this right after the search input/button layout
+        self.search_error_label = QLabel(t("checkin.search.required"))
+        self.search_error_label.setStyleSheet("color: #e74c3c; font-size: 12px; margin-top: 4px;")
+        self.search_error_label.hide()
+        # Assuming your layout variable is `layout` or `root`:
+        root.addWidget(self.search_error_label) 
 
         search_row.addWidget(self.manual_search_input, stretch=1)
         search_row.addWidget(self.manual_search_button)
@@ -605,8 +611,16 @@ class ScanScreen(ThemedWidget, QWidget):
 
     def _on_manual_search(self):
         query = self.manual_search_input.text().strip()
+        
+        # --- NEW: Show warning if empty ---
         if not query:
+            self.search_error_label.show()
+            self.results_list.hide() # Hide previous results
             return
+        else:
+            self.search_error_label.hide()
+        # ----------------------------------
+
         self.results_list.clear()
         results = []
         if query.isdigit():

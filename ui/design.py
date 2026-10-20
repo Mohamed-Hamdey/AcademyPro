@@ -105,6 +105,9 @@ LIGHT = {
     "medal_gold": "#D4AF37",
     "medal_silver": "#A8A8A8",
     "medal_bronze": "#CD7F32",
+    "medal_gold_soft": "#FCF4D2",
+    "medal_silver_soft": "#F0F0F0",
+    "medal_bronze_soft": "#F5E6D8",
 }
 
 # Dark theme — from the design brief, section 2.
@@ -187,7 +190,12 @@ DARK = {
     "text_on_accent":   "#0B1220",
     "medal_gold": "#FFD700",
     "medal_silver": "#C0C0C0",
-    "medal_bronze": "#E89B5A"
+    "medal_bronze": "#E89B5A",
+    "medal_gold_soft": "#3D3313",
+    "medal_silver_soft": "#2A2A2A",
+    "medal_bronze_soft": "#3B2616",
+
+
 
 }
 

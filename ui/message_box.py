@@ -20,8 +20,7 @@ mode automatically. Same API as the QMessageBox calls they replace:
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
 )
-from qtpy.QtCore import Qt
-
+from qtpy.QtCore import Qt, QTimer
 from ui.theme import theme, ThemedWidget, make_secondary, make_danger
 from ui.i18n import t
 
@@ -46,9 +45,18 @@ class MessageDialog(ThemedWidget, QDialog):
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(420)
+        
+        # --- PREVENT FLASH ---
+        # Keep the window hidden from the OS while we build and theme it
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
 
         self._build_ui(title, body, kind, yes_label, no_label)
         self._init_theme()
+        self.restyle() # Force the style immediately
+        
+        # Show it properly once the layout is ready
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+        # ---------------------
 
     def _build_ui(self, title, body, kind, yes_label, no_label):
         layout = QVBoxLayout(self)
@@ -153,29 +161,23 @@ class MessageDialog(ThemedWidget, QDialog):
 # ---------------------------------------------------------------------------
 
 def info(parent, title, body):
-    """Like QMessageBox.information(parent, title, body)."""
     dlg = MessageDialog(parent, title, body, kind="info")
+    dlg.show()
     dlg.exec()
-
 
 def warn(parent, title, body):
-    """Like QMessageBox.warning(parent, title, body)."""
     dlg = MessageDialog(parent, title, body, kind="warn")
+    dlg.show()
     dlg.exec()
-
 
 def error(parent, title, body):
-    """Like QMessageBox.critical(parent, title, body)."""
     dlg = MessageDialog(parent, title, body, kind="error")
+    dlg.show()
     dlg.exec()
 
-
 def ask(parent, title, body, yes_label=None, no_label=None) -> bool:
-    """
-    Like QMessageBox.question(parent, title, body) but returns True/False
-    instead of a StandardButton.
-    """
     dlg = MessageDialog(parent, title, body, kind="ask",
                         yes_label=yes_label, no_label=no_label)
+    dlg.show()
     dlg.exec()
     return dlg.confirmed

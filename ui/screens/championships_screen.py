@@ -224,11 +224,19 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         self.stack.setCurrentIndex(0)
 
     def restyle(self):
-        # Intentionally empty: chips are styled by theme.py (segment class),
-        # cards restyle themselves (ThemedWidget), and section headers use the
-        # "muted" label class. Do NOT call refresh() here — restyle() runs
-        # during construction and on every theme change.
-        pass
+        tm = theme()
+        # Force the dialog background and text to match the theme
+        self.setStyleSheet(
+            f"QDialog {{ background-color: {tm.color('surface')}; }}"
+            f"QLabel {{ color: {tm.color('text')}; font-size: 14px; }}"
+            f"QComboBox {{"
+            f"  background-color: {tm.color('surface_alt')};"
+            f"  color: {tm.color('text')};"
+            f"  border: 1px solid {tm.color('border')};"
+            f"  border-radius: {RADIUS['sm']}px;"
+            f"  padding: 4px 8px;"
+            f"}}"
+        )
 
     def _on_chip_clicked(self, chip):
         if self._active_chip is chip:
@@ -396,7 +404,22 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
 
     def _close_detail(self):
         curr = self.stack.currentWidget()
+        if not curr:
+            return
+            
+        # 1. Switch the stack back to the list view
         self.stack.setCurrentIndex(0)
+        
+        # 2. Remove from the stack
         self.stack.removeWidget(curr)
+        
+        # 3. CRITICAL: Detach from the main window and hide immediately!
+        # This prevents Qt from trying to draw it as a floating window.
+        curr.setParent(None)
+        curr.hide()
+        
+        # 4. Delete it safely in the next event loop cycle
         curr.deleteLater()
+        
+        # 5. Refresh the list
         self.refresh()

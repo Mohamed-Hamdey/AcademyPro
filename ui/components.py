@@ -20,9 +20,12 @@ import os
 import sys
 
 from qtpy.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,QStyledItemDelegate
 )
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtGui import QColor, QPainter, QFont, QFontMetrics,QPen
+from qtpy.QtCore import Qt, QRectF,Signal
+
+
 
 from ui.i18n import t
 
@@ -804,3 +807,92 @@ class ComboBarChart(QWidget, ThemedWidget):
             col.mousePressEvent = _make_handler(key)
 
             self._layout.addWidget(col)
+            
+            
+class PillDelegate(QStyledItemDelegate):
+    """
+    Draws a colored Pill inside a table cell.
+    Supports both standard statuses and championship medals.
+
+    Expects the cell's QTableWidgetItem to have data(UserRole) set to
+    a dict: {"text": str, "kind": "success"|"danger"|"gold"|...}.
+    """
+
+    _SOFT = {
+        "success": "success_soft", "warning": "warning_soft",
+        "error": "error_soft", "danger": "danger_soft",
+        "info": "info_soft", "primary": "primary_soft",
+        "neutral": "neutral_soft",
+        # Medal additions:
+        "gold": "medal_gold_soft", "silver": "medal_silver_soft", "bronze": "medal_bronze_soft"
+    }
+    _TEXT = {
+        "success": "success", "warning": "warning",
+        "error": "error", "danger": "danger",
+        "info": "info", "primary": "primary",
+        "neutral": "text_secondary",
+        # Medal additions:
+        "gold": "medal_gold", "silver": "medal_silver", "bronze": "medal_bronze"
+    }
+
+    def paint(self, painter, option, index):
+        data = index.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(data, dict):
+            super().paint(painter, option, index)
+            return
+
+        text = data.get("text", "")
+        kind = data.get("kind", "neutral")
+
+        tm = theme()
+        # Fallbacks ensure it never crashes if a color is missing
+        fg = QColor(tm.color(self._TEXT.get(kind, "text_secondary")))
+        bg = QColor(tm.color(self._SOFT.get(kind, "neutral_soft")))
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        font = QFont(option.font)
+        base_px = font.pixelSize()
+        if base_px <= 0:
+            base_px = 13
+        font.setPixelSize(max(9, int(base_px * 0.85)))
+        font.setBold(True)
+        painter.setFont(font)
+
+        fm = QFontMetrics(font)
+        text_w = fm.horizontalAdvance(text)
+        pad_x = 12
+        pad_y = 4
+        pill_w = text_w + pad_x * 2
+        pill_h = fm.height() + pad_y * 2
+
+        r = option.rect
+        margin = 6
+        max_w = r.width() - margin * 2
+
+        if pill_w > max_w:
+            while pill_w > max_w and font.pixelSize() > 8:
+                font.setPixelSize(font.pixelSize() - 1)
+                painter.setFont(font)
+                fm = QFontMetrics(font)
+                text_w = fm.horizontalAdvance(text)
+                pill_w = text_w + pad_x * 2
+                pill_h = fm.height() + pad_y * 2
+            pill_w = min(pill_w, max_w)
+
+        pill_rect = QRectF(
+            r.center().x() - pill_w / 2,
+            r.center().y() - pill_h / 2,
+            pill_w, pill_h,
+        )
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bg)
+        radius = pill_h / 2
+        painter.drawRoundedRect(pill_rect, radius, radius)
+
+        painter.setPen(QPen(fg))
+        painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, text)
+
+        painter.restore()

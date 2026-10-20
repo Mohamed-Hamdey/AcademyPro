@@ -79,8 +79,9 @@ class MainWindow(QMainWindow):
         self._register_page("nav.activities", "activities.title", ActivitiesScreen(self), "activities.manage")
         self._register_page("nav.users",          "users.title",   UsersScreen(self),     "users.manage")
         self._register_page("nav.expenses", "expenses.title", ExpensesScreen(self), "expenses.manage")
-        self._register_page("nav.audit",          "audit.title",   AuditScreen(self),     "audit.view")
         self._register_page("nav.championships", "champ.title", ChampionshipsScreen(self), "championships.manage")
+        self._register_page("nav.audit",          "audit.title",   AuditScreen(self),     "audit.view")
+
         
         # Register Recycle Bin without adding to main sidebar
         self._register_page("nav.recycle_bin",    "recycle.title", RecycleBinScreen(self),"settings.manage", hide_from_sidebar=True)
