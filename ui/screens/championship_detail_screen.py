@@ -9,7 +9,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTableWidgetItem, QInputDialog, QFileDialog, QTableWidget
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QTimer
 from qtpy.QtGui import QColor
 from ui.components import SectionCard, KpiCard, EmptyState, Toolbar, PillDelegate
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -232,7 +232,8 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
 
     def _on_edit(self):
         dlg = ChampionshipFormDialog(self.current_champ, parent=self)
-        if dlg.exec(): self.refresh()
+        if dlg.exec():
+            QTimer.singleShot(0, self._refresh_deferred)
 
     def _on_delete(self):
         if ask(self, t("champ.confirm.delete_champ_title"), t("champ.confirm.delete_champ_msg", name=self.current_champ.name)):
@@ -242,13 +243,33 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
     def _on_assign(self):
         existing_ids = [p["player_id"] for p in self._rows]
         dlg = AssignPlayerDialog(self.champ_id, existing_ids, parent=self)
-        if dlg.exec(): self.refresh()
+        if dlg.exec():
+            QTimer.singleShot(0, self._refresh_deferred)
 
     def _on_remove(self):
         p = self._selected_participant()
-        if p and ask(self, t("champ.confirm.remove_title"), t("champ.confirm.remove_msg", name=p['full_name'])):
-            championships_repo.remove_participant(p["id"])
+        if not p:
+            return
+        if not ask(self, t("champ.confirm.remove_title"),
+                   t("champ.confirm.remove_msg", name=p["full_name"])):
+            return
+
+        # Delete the DB row immediately (this is fast — a single DELETE),
+        # but defer the visual refresh by one event-loop tick so the
+        # confirmation dialog has fully closed and its frame is gone
+        # before we rebuild the table and KPI strip. Without this, the
+        # OS paints a white frame during the rebuild.
+        championships_repo.remove_participant(p["id"])
+        QTimer.singleShot(0, self._refresh_deferred)
+
+    def _refresh_deferred(self):
+        """Refresh with paint updates frozen to avoid the white-flash bug."""
+        self.setUpdatesEnabled(False)
+        try:
             self.refresh()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()
 
     def _on_edit_result(self, item):
         p = self._selected_participant()
@@ -266,7 +287,7 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
             if obj:
                 obj.result = new_res
                 championships_repo.update_participant(obj)
-                self.refresh()
+                QTimer.singleShot(0, self._refresh_deferred)
 
     def _on_export(self):
         if not self._rows:

@@ -1,11 +1,14 @@
 """
-About dialog.
+About dialog — v5 polish.
 
 Shows the academy logo, version, runtime info, activation status, and
 a few support buttons. Reachable from the user menu.
 
-The "Third-party licenses" section will be filled in as part of a later
-task — for now it's a placeholder label so the dialog has a slot for it.
+Design v5 polish:
+  * Wider (580 px) for long machine IDs and data paths.
+  * Header divider separates the logo/version block from the info grid.
+  * Footer button row uses a top margin.
+  * WA_DontShowOnScreen flash guard during construction.
 """
 
 import os
@@ -30,14 +33,34 @@ from ui.i18n import t
 from ui.message_box import info
 from version import __version__, APP_NAME
 
+
+def _col(name: str, fallback_token: str, default: str) -> str:
+    """Resolve a theme colour without ever raising."""
+    try:
+        pal = theme().palette()
+        return pal.get(name) or pal.get(fallback_token) or default
+    except Exception:
+        return default
+
+
 class AboutDialog(ThemedWidget, QDialog):
     def __init__(self, parent=None):
         QDialog.__init__(self, parent)
-        self.setWindowTitle(t("about.title"))
-        self.setModal(True)
-        self.setMinimumWidth(520)
-        self._build_ui()
-        self._init_theme()
+
+        # Flash guard.
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
+
+        try:
+            self.setWindowTitle(t("about.title"))
+            self.setModal(True)
+            self.setMinimumWidth(580)
+            self._build_ui()
+            self._init_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
 
     # ------------------------------------------------------------------
     # UI
@@ -50,11 +73,11 @@ class AboutDialog(ThemedWidget, QDialog):
         )
         root.setSpacing(SPACING["md"])
 
-        # ---- Logo + academy name + version ----
+        # ---- Header: logo + academy name + version ----
         header = QHBoxLayout()
         header.setSpacing(SPACING["md"])
 
-        self.logo_label = QLabel()
+        self.logo_label = QLabel(self)
         self.logo_label.setFixedSize(72, 72)
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._load_logo()
@@ -63,22 +86,22 @@ class AboutDialog(ThemedWidget, QDialog):
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
 
-        self.academy_label = QLabel()
+        self.academy_label = QLabel(self)
         self.academy_label.setWordWrap(True)
         title_col.addWidget(self.academy_label)
 
-        self.app_name_label = QLabel(APP_NAME)
+        self.app_name_label = QLabel(APP_NAME, self)
         title_col.addWidget(self.app_name_label)
 
-        self.version_label = QLabel(t("about.version", version=__version__))
+        self.version_label = QLabel(t("about.version", version=__version__), self)
         title_col.addWidget(self.version_label)
 
         title_col.addStretch()
         header.addLayout(title_col, stretch=1)
         root.addLayout(header)
 
-        # ---- Divider ----
-        root.addWidget(self._make_hr())
+        # ---- Header divider ----
+        root.addWidget(self._make_hr("aboutHeaderDivider"))
 
         # ---- Info grid ----
         grid = QGridLayout()
@@ -104,37 +127,38 @@ class AboutDialog(ThemedWidget, QDialog):
         grid.setColumnStretch(1, 1)
         root.addLayout(grid)
 
-        # ---- Divider ----
-        root.addWidget(self._make_hr())
+        # ---- Divider before licenses ----
+        root.addWidget(self._make_hr("aboutLicensesDivider"))
 
-        # ---- Third-party licenses summary + link ----
+        # ---- Licenses row ----
         licenses_row = QHBoxLayout()
         licenses_row.setSpacing(SPACING["sm"])
 
-        self.licenses_label = QLabel(t("about.licenses.summary"))
+        self.licenses_label = QLabel(t("about.licenses.summary"), self)
         self.licenses_label.setWordWrap(True)
         licenses_row.addWidget(self.licenses_label, stretch=1)
 
-        self.view_licenses_button = QPushButton(t("about.btn.view_licenses"))
+        self.view_licenses_button = QPushButton(t("about.btn.view_licenses"), self)
         make_secondary(self.view_licenses_button)
         self.view_licenses_button.clicked.connect(self._on_view_licenses)
         licenses_row.addWidget(self.view_licenses_button)
 
         root.addLayout(licenses_row)
 
-        # ---- Buttons ----
+        # ---- Bottom buttons ----
         button_row = QHBoxLayout()
         button_row.setSpacing(SPACING["sm"])
+        button_row.setContentsMargins(0, SPACING["sm"], 0, 0)
 
-        self.copy_button = QPushButton(t("about.btn.copy_diag"))
+        self.copy_button = QPushButton(t("about.btn.copy_diag"), self)
         make_secondary(self.copy_button)
         self.copy_button.clicked.connect(self._on_copy_diagnostics)
 
-        self.open_logs_button = QPushButton(t("about.btn.open_logs"))
+        self.open_logs_button = QPushButton(t("about.btn.open_logs"), self)
         make_secondary(self.open_logs_button)
         self.open_logs_button.clicked.connect(self._on_open_logs)
 
-        self.close_button = QPushButton(t("about.btn.close"))
+        self.close_button = QPushButton(t("about.btn.close"), self)
         self.close_button.setDefault(True)
         self.close_button.clicked.connect(self.accept)
 
@@ -145,9 +169,9 @@ class AboutDialog(ThemedWidget, QDialog):
         root.addLayout(button_row)
 
     def _add_info_row(self, grid, row, key, value):
-        key_label = QLabel(key)
+        key_label = QLabel(key, self)
         key_label.setObjectName("aboutKey")
-        value_label = QLabel(value)
+        value_label = QLabel(value, self)
         value_label.setObjectName("aboutValue")
         value_label.setWordWrap(True)
         value_label.setTextInteractionFlags(
@@ -156,11 +180,11 @@ class AboutDialog(ThemedWidget, QDialog):
         grid.addWidget(key_label, row, 0)
         grid.addWidget(value_label, row, 1)
 
-    def _make_hr(self):
-        line = QFrame()
+    def _make_hr(self, object_name: str) -> QFrame:
+        line = QFrame(self)
+        line.setObjectName(object_name)
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFixedHeight(1)
-        line.setObjectName("aboutHR")
         return line
 
     # ------------------------------------------------------------------
@@ -283,7 +307,6 @@ class AboutDialog(ThemedWidget, QDialog):
     def _on_open_logs(self):
         path = AppPaths.logs_dir()
         try:
-            # Windows
             if sys.platform.startswith("win"):
                 os.startfile(path)
             elif sys.platform == "darwin":
@@ -295,16 +318,13 @@ class AboutDialog(ThemedWidget, QDialog):
         except Exception as e:
             info(self, t("about.open_logs.failed_title"),
                  t("about.open_logs.failed_body", path=path))
+
     def _on_view_licenses(self):
         """
         Open LICENSES.txt in the system's default text editor.
-
-        In a frozen build it lives next to the .exe (bundled by
-        PyInstaller via the spec's `datas`). In source mode it's at the
-        project root.
         """
         candidates = [
-            bundled_path("LICENSES.txt"),          # frozen build
+            bundled_path("LICENSES.txt"),
             os.path.join(os.path.dirname(__file__), "..", "..", "LICENSES.txt"),
         ]
         for path in candidates:
@@ -328,6 +348,7 @@ class AboutDialog(ThemedWidget, QDialog):
         info(self,
              t("about.open_licenses.missing_title"),
              t("about.open_licenses.missing_body"))
+
     # ------------------------------------------------------------------
     # Theming
     # ------------------------------------------------------------------
@@ -335,7 +356,7 @@ class AboutDialog(ThemedWidget, QDialog):
     def restyle(self):
         tm = theme()
 
-        # Logo monogram background (if no image)
+        # Logo monogram background (only when no image)
         if self.logo_label.pixmap() is None or self.logo_label.pixmap().isNull():
             self.logo_label.setStyleSheet(
                 f"QLabel {{"
@@ -384,7 +405,7 @@ class AboutDialog(ThemedWidget, QDialog):
             f"}}"
         )
 
-        # Style the info grid labels via object names
+        # Info grid labels
         for lbl in self.findChildren(QLabel, "aboutKey"):
             lbl.setStyleSheet(
                 f"QLabel#aboutKey {{"
@@ -402,8 +423,13 @@ class AboutDialog(ThemedWidget, QDialog):
                 f"  font-size: 12px;"
                 f"}}"
             )
-        for line in self.findChildren(QFrame, "aboutHR"):
-            line.setStyleSheet(
-                f"QFrame#aboutHR {{ background-color: {tm.color('divider')};"
-                f" border: none; }}"
-            )
+
+        # Dividers (both header and licenses)
+        for name in ("aboutHeaderDivider", "aboutLicensesDivider"):
+            for line in self.findChildren(QFrame, name):
+                line.setStyleSheet(
+                    f"QFrame#{name} {{"
+                    f"  background-color: {tm.color('divider')};"
+                    f"  border: none;"
+                    f"}}"
+                )

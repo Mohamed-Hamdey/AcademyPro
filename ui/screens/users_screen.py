@@ -7,7 +7,7 @@ import sys
 
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QLabel,
+    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QLabel,QSizePolicy
 )
 from ui.message_box import warn, ask
 from qtpy.QtCore import Qt, QSize
@@ -102,6 +102,7 @@ class UsersScreen(ThemedWidget, QWidget):
         self.search_input.setProperty("cssClass", "search")
         self.search_input.setMinimumWidth(240)
         self.search_input.textChanged.connect(self._search_debouncer.trigger)
+        
         self.add_button = QPushButton(t("users.add"))
         self.add_button.clicked.connect(self._on_add)
 
@@ -110,6 +111,11 @@ class UsersScreen(ThemedWidget, QWidget):
         root.addWidget(self.toolbar)
 
         self.table_card = SectionCard(title=t("users.title"))
+        # FIX 1: Make the SectionCard expand to fill vertical space
+        self.table_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding, 
+            QSizePolicy.Policy.Expanding
+        )
 
         self.table = make_standard_table(
             headers=[
@@ -127,8 +133,15 @@ class UsersScreen(ThemedWidget, QWidget):
         self.table.setIconSize(QSize(_AVATAR_SIZE, _AVATAR_SIZE))
         self.table.itemSelectionChanged.connect(self._update_action_buttons)
         self.table.cellDoubleClicked.connect(self._on_row_double_clicked)
+        
+        # FIX 2: Ensure the table itself also stretches inside the card
+        self.table.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
+        self.table.setVerticalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
 
-        self.table_card.body.addWidget(self.table)
+        self.table_card.body.addWidget(self.table, stretch=1) # <-- added stretch=1
         self.table_card.body.addSpacing(SPACING["sm"])
 
         action_row = QHBoxLayout()
@@ -155,8 +168,10 @@ class UsersScreen(ThemedWidget, QWidget):
         action_row.addWidget(self.delete_user_button)
         self.table_card.body.addLayout(action_row)
 
-        root.addWidget(self.table_card)
-        root.addStretch()
+        # FIX 3: Give the card the remaining vertical space, and 
+        # REMOVE the trailing stretch that was squashing the table.
+        root.addWidget(self.table_card, stretch=1)
+        # root.addStretch()  <-- REMOVED
 
     def restyle(self):
         tm = theme()

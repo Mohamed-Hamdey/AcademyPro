@@ -12,7 +12,7 @@ from qtpy.QtWidgets import (
     QScrollArea, QFrame, QTabWidget, QDateEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QLineEdit,
 )
-from qtpy.QtCore import Qt, QDate
+from qtpy.QtCore import Qt, QDate, QTimer
 from qtpy.QtGui import QColor
 from ui.styles import week_hint_label, payments_total_label,recon_label,badge_label
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -65,7 +65,20 @@ class DashboardScreen(ThemedWidget, QWidget):
         super().showEvent(event)
         if not self._loaded:
             self._loaded = True
+            # Defer the heavy queries + chart rebuild until the window frame
+            # is fully painted. Without this, Windows draws a white frame
+            # for ~100-300ms while `refresh()` blocks the event loop.
+            QTimer.singleShot(0, self._initial_load)
+
+    def _initial_load(self):
+        # Freeze repaints during the synchronous build, so the user sees
+        # the final rendered state instead of intermediate layouts.
+        self.setUpdatesEnabled(False)
+        try:
             self.refresh()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()
 
     # ---------- UI ----------
 
@@ -96,10 +109,17 @@ class DashboardScreen(ThemedWidget, QWidget):
     # ---------- Daily page ----------
     def _on_tab_changed(self, index: int):
         """Lazy-load the monthly tab on first access."""
-        # Index 1 is the monthly tab (index 0 is daily).
         if index == 1 and not self._month_loaded:
             self._month_loaded = True
+            QTimer.singleShot(0, self._refresh_month_deferred)
+
+    def _refresh_month_deferred(self):
+        self.setUpdatesEnabled(False)
+        try:
             self._refresh_month()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()
     def _build_daily_page(self, root):
         # Toolbar: date navigation
         self.toolbar = Toolbar()
@@ -416,7 +436,7 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.date_input.blockSignals(False)
 
     def _on_month_changed(self, _idx):
-        self._refresh_month()
+        QTimer.singleShot(0, self._refresh_month_deferred)
     # ---------- printing ----------
 
     def _on_print_day(self):

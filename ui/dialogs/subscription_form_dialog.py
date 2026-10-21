@@ -1,5 +1,5 @@
 """
-Subscription activation dialog — v4 with activities and flexible sessions.
+Subscription activation dialog — v5 design (matches users_dialog v5).
 
 Fields:
   * Activity picker (dropdown of active activities)
@@ -10,8 +10,12 @@ Fields:
   * Start date, expiry preview
   * Payment amount + payment date
 
-When the user picks a preset, the sessions spinbox is set to the preset's
-value and disabled. Picking "Custom" enables it.
+Design v5 changes:
+  * Wider (560 px) to fit the training-days grid comfortably.
+  * Required-field asterisks via _FieldLabel.
+  * Field growth policy so inputs stretch full-width.
+  * Divider between form and buttons.
+  * WA_DontShowOnScreen flash guard during construction.
 """
 
 import os
@@ -21,9 +25,9 @@ from datetime import date
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QDoubleSpinBox,
     QDateEdit, QPushButton, QHBoxLayout, QLabel, QSpinBox, QCheckBox,
-    QWidget, QGridLayout,
+    QWidget, QGridLayout, QFrame,
 )
-from qtpy.QtCore import QDate
+from qtpy.QtCore import Qt, QDate
 from ui.message_box import ask
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -47,114 +51,181 @@ WEEKDAYS = [
 CUSTOM_PRESET = "__custom__"
 
 
+def _col(name: str, fallback_token: str, default: str) -> str:
+    """Resolve a theme colour without ever raising."""
+    try:
+        pal = theme().palette()
+        return pal.get(name) or pal.get(fallback_token) or default
+    except Exception:
+        return default
+
+
+class _FieldLabel(QWidget):
+    """
+    Form label with a separate red asterisk for required fields.
+    Same widget as users_dialog v5 — RTL-safe.
+    """
+
+    def __init__(self, text: str, required: bool = True, parent=None):
+        QWidget.__init__(self, parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(3)
+
+        self.text_lbl = QLabel((text or "").rstrip(" *"), self)
+        lay.addWidget(self.text_lbl)
+
+        self.star_lbl = None
+        if required:
+            self.star_lbl = QLabel("*", self)
+            lay.addWidget(self.star_lbl)
+        lay.addStretch(1)
+        self.apply_theme()
+
+    def apply_theme(self):
+        if self.star_lbl is not None:
+            color = _col("danger", "danger", "#DC2626")
+            self.star_lbl.setStyleSheet(
+                f"QLabel {{ color: {color}; font-weight: 700; background: transparent; }}"
+            )
+
+
 class SubscriptionFormDialog(ThemedWidget, QDialog):
     def __init__(self, player_id, activated_by="reception", parent=None):
         QDialog.__init__(self, parent)
-        self.player_id = player_id
-        self.activated_by = activated_by
-        self.setWindowTitle(t("dlg.sub.title"))
-        self.setMinimumWidth(480)
-        self._build_ui()
-        self._init_theme()
+
+        # Flash guard — hide from OS compositor until construction is done.
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
+
+        try:
+            self.player_id = player_id
+            self.activated_by = activated_by
+            self.setWindowTitle(t("dlg.sub.title"))
+            self.setMinimumWidth(560)
+            self._build_ui()
+            self._init_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
 
     # ---------- UI ----------
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setContentsMargins(
+            SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"]
+        )
         layout.setSpacing(SPACING["md"])
 
         form = QFormLayout()
         form.setSpacing(SPACING["sm"])
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # ---- Activity picker ----
-        self.activity_input = QComboBox()
+        self.activity_input = QComboBox(self)
         self._activities = activity_service.list_active()
         for a in self._activities:
-            label = activity_service.get_localized_name(a)
             # Include both names, in case the receptionist sees someone who
-            # doesn't know the app's language
+            # doesn't know the app's language.
             display = f"{a.name_en} · {a.name_ar}" if a.name_en != a.name_ar else a.name_en
             self.activity_input.addItem(display, a.activity_id)
         self.activity_input.currentIndexChanged.connect(self._on_activity_changed)
 
         # ---- Preset dropdown ----
-        self.preset_input = QComboBox()
+        self.preset_input = QComboBox(self)
         config = load_config()
         for key, plan in config.get("plans", {}).items():
             self.preset_input.addItem(
                 f"{get_plan_label(key)} ({plan['sessions_total']})", key
             )
         self.preset_input.addItem(t("dlg.sub.preset_custom"), CUSTOM_PRESET)
-        # Default to the first preset
         self.preset_input.currentIndexChanged.connect(self._on_preset_changed)
 
         # ---- Sessions count ----
-        self.sessions_input = QSpinBox()
+        self.sessions_input = QSpinBox(self)
         self.sessions_input.setRange(1, 999)
         self.sessions_input.setValue(8)
 
         # ---- Training days ----
-        days_container = QWidget()
+        days_container = QWidget(self)
         days_grid = QGridLayout(days_container)
         days_grid.setContentsMargins(0, 0, 0, 0)
         days_grid.setSpacing(SPACING["xs"])
         self.day_checkboxes = {}
         for i, (day_key, day_label_key) in enumerate(WEEKDAYS):
-            cb = QCheckBox(t(day_label_key))
+            cb = QCheckBox(t(day_label_key), self)
             self.day_checkboxes[day_key] = cb
             days_grid.addWidget(cb, i // 4, i % 4)
 
         # ---- Dates + payment ----
-        self.start_date_input = QDateEdit()
+        self.start_date_input = QDateEdit(self)
         self.start_date_input.setCalendarPopup(True)
         self.start_date_input.setDisplayFormat("yyyy-MM-dd")
         self.start_date_input.setDate(QDate.currentDate())
         self.start_date_input.dateChanged.connect(self._update_expiry_preview)
 
-        self.payment_amount_input = QDoubleSpinBox()
+        self.payment_amount_input = QDoubleSpinBox(self)
         self.payment_amount_input.setMaximum(100000)
         self.payment_amount_input.setPrefix("EGP ")
 
-        self.payment_date_input = QDateEdit()
+        self.payment_date_input = QDateEdit(self)
         self.payment_date_input.setCalendarPopup(True)
         self.payment_date_input.setDisplayFormat("yyyy-MM-dd")
         self.payment_date_input.setDate(QDate.currentDate())
         self.payment_date_input.dateChanged.connect(self._update_expiry_preview)
 
-        self.expiry_label = QLabel()
+        self.expiry_label = QLabel(self)
 
-        form.addRow(t("dlg.sub.activity"), self.activity_input)
-        form.addRow(t("dlg.sub.preset"), self.preset_input)
-        form.addRow(t("dlg.sub.sessions"), self.sessions_input)
-        form.addRow(t("dlg.sub.days"), days_container)
-        form.addRow(t("dlg.sub.start_date"), self.start_date_input)
-        form.addRow(t("dlg.sub.expires_on"), self.expiry_label)
-        form.addRow(t("dlg.sub.payment"), self.payment_amount_input)
-        form.addRow(t("dlg.sub.payment_date"), self.payment_date_input)
+        # ---- Assemble form with required asterisks ----
+        form.addRow(_FieldLabel(t("dlg.sub.activity"), True, self), self.activity_input)
+        form.addRow(_FieldLabel(t("dlg.sub.preset"), False, self), self.preset_input)
+        form.addRow(_FieldLabel(t("dlg.sub.sessions"), True, self), self.sessions_input)
+        form.addRow(_FieldLabel(t("dlg.sub.days"), True, self), days_container)
+        form.addRow(_FieldLabel(t("dlg.sub.start_date"), True, self), self.start_date_input)
+        form.addRow(_FieldLabel(t("dlg.sub.expires_on"), False, self), self.expiry_label)
+        form.addRow(_FieldLabel(t("dlg.sub.payment"), True, self), self.payment_amount_input)
+        form.addRow(_FieldLabel(t("dlg.sub.payment_date"), True, self), self.payment_date_input)
         layout.addLayout(form)
 
-        # Error label
-        self.error_label = QLabel("")
+        # ---- Divider ----
+        divider = QFrame(self)
+        divider.setObjectName("subFormDivider")
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(
+            f"QFrame#subFormDivider {{"
+            f"  background-color: {_col('divider', 'border', '#E8EDF3')};"
+            f"  border: none;"
+            f"}}"
+        )
+        layout.addWidget(divider)
+
+        # ---- Error banner ----
+        self.error_label = QLabel("", self)
         self.error_label.setWordWrap(True)
         self.error_label.hide()
         layout.addWidget(self.error_label)
 
-        # Buttons
+        # ---- Buttons ----
         button_row = QHBoxLayout()
         button_row.setSpacing(SPACING["sm"])
-        cancel_button = QPushButton(t("dlg.sub.cancel"))
+        button_row.setContentsMargins(0, SPACING["sm"], 0, 0)
+
+        cancel_button = QPushButton(t("dlg.sub.cancel"), self)
         make_secondary(cancel_button)
-        save_button = QPushButton(t("dlg.sub.activate"))
+        save_button = QPushButton(t("dlg.sub.activate"), self)
         save_button.setDefault(True)
         save_button.clicked.connect(self._on_save)
         cancel_button.clicked.connect(self.reject)
+
         button_row.addStretch()
         button_row.addWidget(cancel_button)
         button_row.addWidget(save_button)
         layout.addLayout(button_row)
 
-        # Initialize the state
+        # Initialize state
         self._on_activity_changed()
         self._on_preset_changed()
         self._update_expiry_preview()
@@ -195,13 +266,11 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         activity = self._current_activity()
         if activity is None:
             return
-        # Clear all, then check the ones in the activity's default_days
         for day_key, cb in self.day_checkboxes.items():
             cb.setChecked(day_key in activity.default_days)
 
     def _on_preset_changed(self):
-        """When preset changes, if it's a real preset fill the spinbox and
-        disable it; if it's Custom, enable the spinbox."""
+        """Preset fills the spinbox; Custom enables manual entry."""
         preset_key = self.preset_input.currentData()
         if preset_key == CUSTOM_PRESET:
             self.sessions_input.setEnabled(True)

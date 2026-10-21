@@ -1,11 +1,17 @@
 """
-Restore-from-backup dialog.
+Restore-from-backup dialog — v5 polish.
 
 Shows the available backups (newest first), lets the manager pick one,
 and calls backup_service.restore_backup() on confirm.
 
 The caller (MainWindow) is responsible for telling the user to restart
 after a successful restore — this dialog just closes with Accepted.
+
+Design v5 polish:
+  * Wider (780×560) for the backup list.
+  * Warning-style hint banner at the top (destructive action reminder).
+  * Divider between the hint and the list.
+  * WA_DontShowOnScreen flash guard during construction.
 """
 
 import os
@@ -13,16 +19,25 @@ from datetime import datetime
 
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QApplication,
+    QListWidget, QListWidgetItem, QApplication, QFrame,
 )
 from qtpy.QtCore import Qt
 
 from services import backup_service
 from ui.components import EmptyState
 from ui.theme import theme, ThemedWidget, make_secondary, make_danger
-from ui.design import SPACING
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
 from ui.message_box import ask, warn, error, info
+
+
+def _col(name: str, fallback_token: str, default: str) -> str:
+    """Resolve a theme colour without ever raising."""
+    try:
+        pal = theme().palette()
+        return pal.get(name) or pal.get(fallback_token) or default
+    except Exception:
+        return default
 
 
 class RestoreBackupDialog(ThemedWidget, QDialog):
@@ -33,14 +48,24 @@ class RestoreBackupDialog(ThemedWidget, QDialog):
 
     def __init__(self, parent=None):
         QDialog.__init__(self, parent)
-        self.setWindowTitle(t("backup.restore.title"))
-        self.setModal(True)
-        self.setMinimumSize(720, 480)
 
-        self._backups = []
-        self._build_ui()
-        self._reload()
-        self._init_theme()
+        # Flash guard.
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
+
+        try:
+            self.setWindowTitle(t("backup.restore.title"))
+            self.setModal(True)
+            self.setMinimumSize(780, 560)
+
+            self._backups = []
+            self._build_ui()
+            self._reload()
+            self._init_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
 
     # ------------------------------------------------------------------
     # UI
@@ -53,15 +78,30 @@ class RestoreBackupDialog(ThemedWidget, QDialog):
         )
         root.setSpacing(SPACING["md"])
 
-        self.hint_label = QLabel(t("backup.restore.hint"))
+        # ---- Warning banner (destructive action) ----
+        self.hint_label = QLabel(t("backup.restore.hint"), self)
         self.hint_label.setWordWrap(True)
         root.addWidget(self.hint_label)
 
-        self.list_widget = QListWidget()
+        # ---- Divider ----
+        divider = QFrame(self)
+        divider.setObjectName("restoreDivider")
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(
+            f"QFrame#restoreDivider {{"
+            f"  background-color: {_col('divider', 'border', '#E8EDF3')};"
+            f"  border: none;"
+            f"}}"
+        )
+        root.addWidget(divider)
+
+        # ---- List ----
+        self.list_widget = QListWidget(self)
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         self.list_widget.itemDoubleClicked.connect(lambda *_: self._on_restore())
         root.addWidget(self.list_widget, stretch=1)
 
+        # ---- Empty state ----
         self.empty_state = EmptyState(
             icon="💾",
             message=t("backup.restore.empty"),
@@ -69,14 +109,16 @@ class RestoreBackupDialog(ThemedWidget, QDialog):
         self.empty_state.hide()
         root.addWidget(self.empty_state, stretch=1)
 
+        # ---- Footer buttons ----
         footer = QHBoxLayout()
         footer.setSpacing(SPACING["sm"])
+        footer.setContentsMargins(0, SPACING["sm"], 0, 0)
 
-        self.close_button = QPushButton(t("backup.btn.close"))
+        self.close_button = QPushButton(t("backup.btn.close"), self)
         make_secondary(self.close_button)
         self.close_button.clicked.connect(self.reject)
 
-        self.restore_button = QPushButton(t("backup.btn.restore_selected"))
+        self.restore_button = QPushButton(t("backup.btn.restore_selected"), self)
         make_danger(self.restore_button)
         self.restore_button.setEnabled(False)
         self.restore_button.clicked.connect(self._on_restore)
@@ -103,7 +145,6 @@ class RestoreBackupDialog(ThemedWidget, QDialog):
         self.list_widget.show()
         self.empty_state.hide()
 
-        tm = theme()
         for b in self._backups:
             text = self._format_row(b)
             item = QListWidgetItem(text)
@@ -178,13 +219,20 @@ class RestoreBackupDialog(ThemedWidget, QDialog):
 
     def restyle(self):
         tm = theme()
+
+        # Warning banner (destructive action reminder).
         self.hint_label.setStyleSheet(
             f"QLabel {{"
-            f"  color: {tm.color('text_secondary')};"
-            f"  background-color: transparent;"
+            f"  color: {tm.color('warning')};"
+            f"  background-color: {tm.color('warning_soft')};"
+            f"  border-radius: {RADIUS['sm']}px;"
+            f"  padding: 10px 14px;"
+            f"  font-weight: 600;"
             f"  font-size: 12px;"
             f"}}"
         )
+
+        # List styling (kept as before, but now on the widget itself).
         self.list_widget.setStyleSheet(
             f"QListWidget {{"
             f"  background-color: {tm.color('surface')};"

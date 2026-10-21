@@ -139,18 +139,22 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _glyph_for(nav_key: str) -> str:
+        # Returns an *icon key* understood by ui.shell._make_nav_icon().
+        # These are drawn with QPainter at runtime (no external assets,
+        # PyInstaller safe), and tinted from the active theme tokens.
         return {
-            "nav.check_in":       "▶",
-            "nav.dashboard":      "📊",
-            "nav.manage_players": "▤",
-            "nav.users":          "👥",
-            "nav.activities":     "🏃",
-            "nav.expenses":       "💸",
-            "nav.audit":          "🗒",
-            "nav.championships":  "🏆",
-            "nav.recycle_bin":    "🗑",
-        }.get(nav_key, "•")
-
+            "nav.check_in":       "play",
+            "nav.dashboard":      "chart",
+            "nav.manage_players": "list",
+            "nav.users":          "users",
+            "nav.activities":     "running",
+            "nav.expenses":       "wallet",
+            "nav.audit":          "notebook",
+            "nav.championships":  "trophy",
+            "nav.recycle_bin":    "trash",
+        }.get(nav_key, "dot")
+        
+        
     def _on_nav_changed(self, index: int):
         """Sidebar index → workspace page key."""
         if index < 0 or index >= len(self._nav_keys_in_order):

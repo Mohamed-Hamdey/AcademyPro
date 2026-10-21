@@ -1,5 +1,5 @@
 """
-Add / edit activity dialog — v4 design.
+Add / edit activity dialog — v5 design (matches users_dialog v5).
 
 Fields:
   * English name
@@ -14,7 +14,9 @@ import sys
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton,
     QHBoxLayout, QLabel, QCheckBox, QWidget, QGridLayout, QColorDialog,
+    QFrame,
 )
+from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -35,83 +37,157 @@ WEEKDAYS = [
 ]
 
 
+def _col(name: str, fallback_token: str, default: str) -> str:
+    """Resolve a theme colour without ever raising."""
+    try:
+        pal = theme().palette()
+        return pal.get(name) or pal.get(fallback_token) or default
+    except Exception:
+        return default
+
+
+class _FieldLabel(QWidget):
+    """Form label with a separate red asterisk for required fields."""
+
+    def __init__(self, text: str, required: bool = True, parent=None):
+        QWidget.__init__(self, parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(3)
+
+        self.text_lbl = QLabel((text or "").rstrip(" *"), self)
+        lay.addWidget(self.text_lbl)
+
+        self.star_lbl = None
+        if required:
+            self.star_lbl = QLabel("*", self)
+            lay.addWidget(self.star_lbl)
+        lay.addStretch(1)
+        self.apply_theme()
+
+    def apply_theme(self):
+        if self.star_lbl is not None:
+            color = _col("danger", "danger", "#DC2626")
+            self.star_lbl.setStyleSheet(
+                f"QLabel {{ color: {color}; font-weight: 700; background: transparent; }}"
+            )
+
+
 class ActivityFormDialog(ThemedWidget, QDialog):
     def __init__(self, activity=None, parent=None):
         QDialog.__init__(self, parent)
-        self.editing = activity is not None
-        self.activity = activity
-        self._selected_color = activity.color if activity else None
 
-        self.setWindowTitle(
-            t("activities.dialog.title_edit") if self.editing
-            else t("activities.dialog.title_add")
-        )
-        self.setMinimumWidth(440)
+        # Flash guard.
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
 
-        self._build_ui()
-        if activity:
-            self._prefill(activity)
-        self._init_theme()
+        try:
+            self.editing = activity is not None
+            self.activity = activity
+            self._selected_color = activity.color if activity else None
+
+            self.setWindowTitle(
+                t("activities.dialog.title_edit") if self.editing
+                else t("activities.dialog.title_add")
+            )
+            self.setMinimumWidth(540)
+
+            self._build_ui()
+            if activity:
+                self._prefill(activity)
+            self._init_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
+
+    # ---------- UI ----------
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setContentsMargins(
+            SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"]
+        )
         layout.setSpacing(SPACING["md"])
 
         form = QFormLayout()
         form.setSpacing(SPACING["sm"])
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        self.name_en_input = QLineEdit()
-        self.name_ar_input = QLineEdit()
+        # ---- Text fields ----
+        self.name_en_input = QLineEdit(self)
+        self.name_ar_input = QLineEdit(self)
 
         # ---- Training days ----
-        days_container = QWidget()
+        days_container = QWidget(self)
         days_grid = QGridLayout(days_container)
         days_grid.setContentsMargins(0, 0, 0, 0)
         days_grid.setSpacing(SPACING["xs"])
 
         self.day_checkboxes = {}
         for i, (day_key, day_label_key) in enumerate(WEEKDAYS):
-            cb = QCheckBox(t(day_label_key))
+            cb = QCheckBox(t(day_label_key), self)
             self.day_checkboxes[day_key] = cb
             days_grid.addWidget(cb, i // 4, i % 4)
 
         # ---- Color picker (optional) ----
         color_row = QHBoxLayout()
         color_row.setSpacing(SPACING["sm"])
-        self.color_button = QPushButton(t("activities.dialog.pick_color"))
+        color_row.setContentsMargins(0, 0, 0, 0)
+        self.color_button = QPushButton(t("activities.dialog.pick_color"), self)
         make_secondary(self.color_button)
         self.color_button.clicked.connect(self._pick_color)
-        self.color_preview = QLabel()
+        self.color_preview = QLabel(self)
         self.color_preview.setFixedSize(28, 28)
         color_row.addWidget(self.color_button)
         color_row.addWidget(self.color_preview)
         color_row.addStretch()
 
-        form.addRow(t("activities.dialog.name_en"), self.name_en_input)
-        form.addRow(t("activities.dialog.name_ar"), self.name_ar_input)
-        form.addRow(t("activities.dialog.days"), days_container)
-        form.addRow(t("activities.dialog.color"), color_row)
+        # ---- Form rows with asterisks ----
+        form.addRow(_FieldLabel(t("activities.dialog.name_en"), True, self), self.name_en_input)
+        form.addRow(_FieldLabel(t("activities.dialog.name_ar"), True, self), self.name_ar_input)
+        form.addRow(_FieldLabel(t("activities.dialog.days"), False, self), days_container)
+        form.addRow(_FieldLabel(t("activities.dialog.color"), False, self), color_row)
         layout.addLayout(form)
 
-        self.error_label = QLabel("")
+        # ---- Divider ----
+        divider = QFrame(self)
+        divider.setObjectName("activityFormDivider")
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(
+            f"QFrame#activityFormDivider {{"
+            f"  background-color: {_col('divider', 'border', '#E8EDF3')};"
+            f"  border: none;"
+            f"}}"
+        )
+        layout.addWidget(divider)
+
+        # ---- Error banner ----
+        self.error_label = QLabel("", self)
         self.error_label.setWordWrap(True)
         self.error_label.hide()
         layout.addWidget(self.error_label)
 
-        # Buttons
+        # ---- Buttons ----
         button_row = QHBoxLayout()
         button_row.setSpacing(SPACING["sm"])
-        cancel_button = QPushButton(t("activities.dialog.cancel"))
+        button_row.setContentsMargins(0, SPACING["sm"], 0, 0)
+
+        cancel_button = QPushButton(t("activities.dialog.cancel"), self)
         make_secondary(cancel_button)
-        save_button = QPushButton(t("activities.dialog.save"))
+
+        save_button = QPushButton(t("activities.dialog.save"), self)
         save_button.setDefault(True)
         save_button.clicked.connect(self._on_save)
         cancel_button.clicked.connect(self.reject)
+
         button_row.addStretch()
         button_row.addWidget(cancel_button)
         button_row.addWidget(save_button)
         layout.addLayout(button_row)
+
+    # ---------- theming ----------
 
     def restyle(self):
         tm = theme()
@@ -125,18 +201,24 @@ class ActivityFormDialog(ThemedWidget, QDialog):
         )
         self._update_color_preview()
 
+    # ---------- prefill ----------
+
     def _prefill(self, activity):
         self.name_en_input.setText(activity.name_en)
         self.name_ar_input.setText(activity.name_ar)
-        for day_key in activity.default_days:
+        for day_key in (activity.default_days or []):
             cb = self.day_checkboxes.get(day_key)
             if cb:
                 cb.setChecked(True)
         self._update_color_preview()
 
+    # ---------- color ----------
+
     def _pick_color(self):
         initial = QColor(self._selected_color) if self._selected_color else QColor("#2563EB")
-        color = QColorDialog.getColor(initial, self, t("activities.dialog.pick_color"))
+        color = QColorDialog.getColor(
+            initial, self, t("activities.dialog.pick_color")
+        )
         if color.isValid():
             self._selected_color = color.name()
             self._update_color_preview()
@@ -159,6 +241,8 @@ class ActivityFormDialog(ThemedWidget, QDialog):
                 f"  border-radius: {RADIUS['xs']}px;"
                 f"}}"
             )
+
+    # ---------- save ----------
 
     def _show_error(self, msg):
         self.error_label.setText(msg)

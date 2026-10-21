@@ -1,4 +1,15 @@
-"""QR preview dialog — v4 design."""
+"""
+QR preview dialog — v5 polish.
+
+Shown right after a new player is created. Displays the QR code with
+Save As / Done buttons.
+
+Design v5 polish:
+  * Wider (420 px).
+  * Dividers between header/QR/buttons for visual structure.
+  * WA_DontShowOnScreen flash guard during construction.
+  * shutil.copy → shutil.copy2 (preserve metadata on export).
+"""
 
 import os
 import sys
@@ -19,40 +30,69 @@ from ui.design import SPACING, RADIUS
 from ui.i18n import t
 
 
+def _col(name: str, fallback_token: str, default: str) -> str:
+    """Resolve a theme colour without ever raising."""
+    try:
+        pal = theme().palette()
+        return pal.get(name) or pal.get(fallback_token) or default
+    except Exception:
+        return default
+
+
 class QRPreviewDialog(ThemedWidget, QDialog):
     def __init__(self, player_name, player_id, qr_path, parent=None):
         QDialog.__init__(self, parent)
-        self.qr_path = qr_path
-        self.player_name = player_name
-        self.setWindowTitle(t("dlg.qr.title"))
-        self.setMinimumWidth(360)
-        self._build_ui(player_id)
-        self._init_theme()
+
+        # Flash guard.
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
+
+        try:
+            self.qr_path = qr_path
+            self.player_name = player_name
+            self.setWindowTitle(t("dlg.qr.title"))
+            self.setMinimumWidth(420)
+            self._build_ui(player_id)
+            self._init_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
+
+    # ---------- UI ----------
 
     def _build_ui(self, player_id):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setContentsMargins(
+            SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"]
+        )
         layout.setSpacing(SPACING["md"])
 
-        # Header: name + ID + created pill
-        self.title = QLabel(self.player_name)
+        # ---- Header: name + ID + created pill ----
+        self.title = QLabel(self.player_name, self)
         self.title.setWordWrap(True)
         layout.addWidget(self.title)
 
         header_row = QHBoxLayout()
-        self.id_label = QLabel(t("dlg.qr.player_id", player_id=player_id))
+        header_row.setSpacing(SPACING["sm"])
+        self.id_label = QLabel(t("dlg.qr.player_id", player_id=player_id), self)
         header_row.addWidget(self.id_label)
         header_row.addStretch()
-        self.success_pill = Pill(t("dlg.qr.created_badge"), "success")
+        self.success_pill = Pill(t("dlg.qr.created_badge"), "success", self)
         header_row.addWidget(self.success_pill)
         layout.addLayout(header_row)
 
-        # QR code in a soft frame
-        qr_frame = QFrame()
+        # ---- Header divider ----
+        layout.addWidget(self._make_hr("qrHeaderDivider"))
+
+        # ---- QR code in a soft frame ----
+        qr_frame = QFrame(self)
         qr_frame.setObjectName("qrFrame")
         qr_layout = QVBoxLayout(qr_frame)
-        qr_layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
-        self.qr_label = QLabel()
+        qr_layout.setContentsMargins(
+            SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"]
+        )
+        self.qr_label = QLabel(self)
         self.qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pixmap = QPixmap(self.qr_path).scaled(
             220, 220, Qt.AspectRatioMode.KeepAspectRatio,
@@ -63,24 +103,43 @@ class QRPreviewDialog(ThemedWidget, QDialog):
         self.qr_frame = qr_frame
         layout.addWidget(qr_frame)
 
-        self.hint = QLabel(t("dlg.qr.hint"))
+        # ---- Hint ----
+        self.hint = QLabel(t("dlg.qr.hint"), self)
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
 
+        # ---- Bottom divider ----
+        layout.addWidget(self._make_hr("qrBottomDivider"))
+
+        # ---- Buttons ----
         button_row = QHBoxLayout()
         button_row.setSpacing(SPACING["sm"])
-        self.save_as_button = QPushButton(t("dlg.qr.save_as"))
-        self.close_button = QPushButton(t("dlg.qr.done"))
+        button_row.setContentsMargins(0, SPACING["sm"], 0, 0)
+
+        self.save_as_button = QPushButton(t("dlg.qr.save_as"), self)
         make_secondary(self.save_as_button)
         self.save_as_button.clicked.connect(self._on_save_as)
+
+        self.close_button = QPushButton(t("dlg.qr.done"), self)
+        self.close_button.setDefault(True)
         self.close_button.clicked.connect(self.accept)
+
         button_row.addWidget(self.save_as_button)
         button_row.addStretch()
         button_row.addWidget(self.close_button)
         layout.addLayout(button_row)
 
+    def _make_hr(self, object_name: str) -> QFrame:
+        line = QFrame(self)
+        line.setObjectName(object_name)
+        line.setFixedHeight(1)
+        return line
+
+    # ---------- theming ----------
+
     def restyle(self):
         tm = theme()
+
         self.title.setStyleSheet(
             f"QLabel {{"
             f"  color: {tm.color('text')};"
@@ -112,13 +171,25 @@ class QRPreviewDialog(ThemedWidget, QDialog):
             f"}}"
         )
 
+        # Dividers
+        for name in ("qrHeaderDivider", "qrBottomDivider"):
+            for line in self.findChildren(QFrame, name):
+                line.setStyleSheet(
+                    f"QFrame#{name} {{"
+                    f"  background-color: {tm.color('divider')};"
+                    f"  border: none;"
+                    f"}}"
+                )
+
+    # ---------- save as ----------
+
     def _on_save_as(self):
         default_name = f"{self.player_name.replace(' ', '_')}_QR.png"
         dest_path, _ = QFileDialog.getSaveFileName(
             self, t("dlg.qr.save_dialog_title"), default_name, t("dlg.qr.png_filter")
         )
         if dest_path:
-            shutil.copy(self.qr_path, dest_path)
+            shutil.copy2(self.qr_path, dest_path)
             info(
                 self, t("dlg.qr.saved_title"),
                 t("dlg.qr.saved_msg", path=dest_path),

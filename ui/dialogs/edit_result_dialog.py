@@ -1,42 +1,80 @@
 """
-Custom dialog for editing a participant's championship result.
+Custom dialog for editing a participant's championship result — v5 design.
+
 Replaces the native QInputDialog so it follows the app's theme.
+Small, focused dialog: header (player name) → divider → combo → buttons.
 """
+
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
+    QFrame,
 )
 from qtpy.QtCore import Qt
+
 from ui.theme import theme, ThemedWidget, make_secondary
-from ui.design import SPACING, RADIUS
+from ui.design import SPACING, RADIUS, TYPOGRAPHY
 from ui.i18n import t
+
+
+def _col(name: str, fallback_token: str, default: str) -> str:
+    """Resolve a theme colour without ever raising."""
+    try:
+        pal = theme().palette()
+        return pal.get(name) or pal.get(fallback_token) or default
+    except Exception:
+        return default
 
 
 class EditResultDialog(ThemedWidget, QDialog):
     def __init__(self, current_result, player_name, parent=None):
         QDialog.__init__(self, parent)
 
-        self.setWindowTitle(t("champ.detail.edit_result"))
-        self.setMinimumWidth(320)
+        # Flash guard.
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
 
-        self.current_result = current_result
-        self.player_name = player_name
+        try:
+            self.setWindowTitle(t("champ.detail.edit_result"))
+            self.setMinimumWidth(400)
 
-        self._build_ui()
-        self._init_theme()
-        self.restyle()
+            self.current_result = current_result
+            self.player_name = player_name
+
+            self._build_ui()
+            self._init_theme()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
+
+    # ---------- UI ----------
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
+        layout.setContentsMargins(
+            SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"]
+        )
         layout.setSpacing(SPACING["md"])
 
-        # Player name header
-        name_lbl = QLabel(self.player_name)
-        name_lbl.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(name_lbl)
+        # ---- Header: player name ----
+        self.name_lbl = QLabel(self.player_name, self)
+        self.name_lbl.setWordWrap(True)
+        layout.addWidget(self.name_lbl)
 
-        # Combo box for choices
-        self.combo = QComboBox()
+        # ---- Divider ----
+        divider = QFrame(self)
+        divider.setObjectName("editResultDivider")
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(
+            f"QFrame#editResultDivider {{"
+            f"  background-color: {_col('divider', 'border', '#E8EDF3')};"
+            f"  border: none;"
+            f"}}"
+        )
+        layout.addWidget(divider)
+
+        # ---- Combo box for medal choices ----
+        self.combo = QComboBox(self)
         self.choices = [
             ("gold", t("result.gold")),
             ("silver", t("result.silver")),
@@ -44,61 +82,46 @@ class EditResultDialog(ThemedWidget, QDialog):
             ("participant", t("result.participant")),
             (None, t("champ.result.none")),
         ]
-        
+
         for i, (key, label) in enumerate(self.choices):
             self.combo.addItem(label, key)
             if key == self.current_result:
                 self.combo.setCurrentIndex(i)
-        
-        self.combo.setMinimumHeight(36)
+
         layout.addWidget(self.combo)
 
-        # Buttons
+        # ---- Buttons ----
         btns = QHBoxLayout()
+        btns.setSpacing(SPACING["sm"])
+        btns.setContentsMargins(0, SPACING["sm"], 0, 0)
         btns.addStretch()
-        
-        cancel = QPushButton(t("msg.cancel"))
+
+        cancel = QPushButton(t("msg.cancel"), self)
         make_secondary(cancel)
         cancel.clicked.connect(self.reject)
-        
-        save = QPushButton(t("msg.save"))
+
+        save = QPushButton(t("msg.save"), self)
         save.setDefault(True)
         save.clicked.connect(self.accept)
-        
+
         btns.addWidget(cancel)
         btns.addWidget(save)
         layout.addLayout(btns)
 
+    # ---------- theming ----------
+
     def restyle(self):
         tm = theme()
+        self.name_lbl.setStyleSheet(
+            f"QLabel {{"
+            f"  color: {tm.color('text')};"
+            f"  background-color: transparent;"
+            f"  font-size: {TYPOGRAPHY['section']['size']}px;"
+            f"  font-weight: 600;"
+            f"}}"
+        )
 
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {tm.color('surface')};
-                color: {tm.color('text')};
-            }}
-
-            QLabel {{
-                color: {tm.color('text')};
-            }}
-
-            QComboBox {{
-                background-color: {tm.color('surface_alt')};
-                color: {tm.color('text')};
-                border: 1px solid {tm.color('border')};
-                border-radius: {RADIUS['sm']}px;
-                padding: 4px 8px;
-                min-height: 26px;
-            }}
-
-            QComboBox QAbstractItemView {{
-                background-color: {tm.color('surface')};
-                color: {tm.color('text')};
-                selection-background-color: {tm.color('surface_alt')};
-                selection-color: {tm.color('text')};
-                border: 1px solid {tm.color('border')};
-            }}
-        """)
+    # ---------- result ----------
 
     def get_result(self):
         """Returns the selected result key (or None)."""

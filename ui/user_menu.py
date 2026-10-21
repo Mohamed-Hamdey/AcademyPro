@@ -1,41 +1,15 @@
 """
 UserMenuButton — top-bar user widget with a custom popup card.
-
-Save as ui/user_menu.py and use it in place of the QMenu-based user button
-in ui/shell.py (TopBar):
-
-    from ui.user_menu import UserMenuButton
-
-    self.user_menu = UserMenuButton(user.username, role_label)     # role_label = e.g. t("role.manager")
-    self.user_menu.add_item(t("menu.change_password"), self._on_change_password, icon="🔑")
-    self.user_menu.add_separator()
-    self.user_menu.add_item(t("menu.backup_now"), self._on_backup, icon="💾")
-    self.user_menu.add_item(t("menu.restore"), self._on_restore, icon="📥")
-    self.user_menu.add_separator()
-    self.user_menu.add_item(t("menu.about"), self._on_about, icon="ℹ️")
-    self.user_menu.add_separator()
-    self.user_menu.add_item(t("menu.logout"), self._on_logout, icon="🚪", danger=True)
-
-Keep whatever permission checks you already have (e.g. only add backup/restore
-items when app_state.can(...)). Use your existing t() keys and handlers.
-
-Design:
-  * Trigger: rounded pill with a coloured initial avatar, the user's name, the
-    role under it (small, muted) and a chevron that flips while open.
-  * Popup: a card with a large avatar, name and a role pill, a divider, then
-    icon rows. Hover/keyboard highlight; the logout row is red.
-  * RTL aware (popup aligns to the trigger's start edge), keyboard friendly
-    (Tab to the trigger, Space/Enter/Down opens, Up/Down moves, Enter chooses,
-    Esc closes).
-  * The popup window is created once, lazily, and reused — nothing is created
-    per open. Chosen actions run after the popup has closed, so dialogs open
-    cleanly.
 """
 
+import os
 import time
 
-from qtpy.QtCore import Qt, QRectF, QPointF, QPoint, QTimer
-from qtpy.QtGui import QPainter, QColor, QPen, QBrush, QFont, QFontMetrics, QTextOption
+from qtpy.QtCore import Qt, QRectF, QPointF, QPoint, QTimer, QSize
+from qtpy.QtGui import (
+    QPainter, QColor, QPen, QBrush, QFont, QFontMetrics, QTextOption,
+    QPixmap, QPainterPath,
+)
 from qtpy.QtWidgets import (
     QWidget, QFrame, QLabel, QHBoxLayout, QVBoxLayout, QSizePolicy,
     QGraphicsDropShadowEffect, QApplication,
@@ -69,20 +43,35 @@ def _hex(name: str, fallback_token: str, default: str) -> str:
 # ---------------------------------------------------------------------------
 
 class _Avatar(QWidget):
-    """Circle with the user's initial; colour is derived from the name."""
+    """
+    Circle that shows either the user's photo (clipped to a circle) or,
+    if no photo is available, their initial letter on a coloured disc.
+    """
 
     def __init__(self, size: int, parent=None):
         QWidget.__init__(self, parent)
         self._size = size
         self._text = "?"
         self._color = QColor(_AVATAR_COLORS[0])
+        self._pixmap: QPixmap | None = None
         self.setFixedSize(size, size)
 
-    def set_user(self, name: str):
+    def set_user(self, name: str, photo_path: str | None = None):
         name = (name or "").strip()
         self._text = name[:1].upper() if name else "?"
         idx = (sum(ord(ch) for ch in name) % len(_AVATAR_COLORS)) if name else 0
         self._color = QColor(_AVATAR_COLORS[idx])
+
+        self._pixmap = None
+        if photo_path and os.path.isfile(photo_path):
+            pix = QPixmap(photo_path)
+            if not pix.isNull():
+                pix = pix.scaled(
+                    QSize(self._size, self._size),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self._pixmap = pix
         self.update()
 
     def paintEvent(self, event):
@@ -90,18 +79,38 @@ class _Avatar(QWidget):
         painter = QPainter(self)
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(self._color))
-            painter.drawEllipse(QRectF(0, 0, s, s))
 
-            font = QFont(self.font())
-            font.setPixelSize(max(10, int(s * 0.42)))
-            font.setBold(True)
-            painter.setFont(font)
-            painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(QRectF(0, 0, s, s), self._text,
-                             QTextOption(Qt.AlignmentFlag.AlignCenter))
+            circle = QRectF(0, 0, s, s)
+
+            if self._pixmap is not None:
+                # Clip the photo to a circle, then blit it centered.
+                clip = QPainterPath()
+                clip.addEllipse(circle)
+                painter.setClipPath(clip)
+                # Center-crop the pixmap if it isn't square.
+                pw, ph = self._pixmap.width(), self._pixmap.height()
+                side = min(pw, ph)
+                sx = (pw - side) // 2
+                sy = (ph - side) // 2
+                painter.drawPixmap(
+                    0, 0, self._pixmap,
+                    sx, sy, side, side,
+                )
+            else:
+                # Initial-on-colour fallback.
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(self._color))
+                painter.drawEllipse(circle)
+
+                font = QFont(self.font())
+                font.setPixelSize(max(10, int(s * 0.42)))
+                font.setBold(True)
+                painter.setFont(font)
+                painter.setPen(QColor("#FFFFFF"))
+                painter.drawText(
+                    circle, self._text,
+                    QTextOption(Qt.AlignmentFlag.AlignCenter),
+                )
         finally:
             painter.end()
 
@@ -205,7 +214,6 @@ class _Row(QFrame):
             return
         super().keyPressEvent(event)
 
-    # The popup hands us (chooser, callback) — see _UserPopup.set_entries().
     _on_activate_cb = None
 
     def paintEvent(self, event):
@@ -230,7 +238,7 @@ class _Row(QFrame):
 # ---------------------------------------------------------------------------
 
 class _UserPopup(ThemedWidget, QFrame):
-    _M = 14            # transparent margin that holds the drop shadow
+    _M = 14
     _CARD_W = 264
 
     def __init__(self, owner):
@@ -262,7 +270,6 @@ class _UserPopup(ThemedWidget, QFrame):
         card_lay.setContentsMargins(8, 8, 8, 8)
         card_lay.setSpacing(0)
 
-        # ---- header: big avatar + name + role pill ----
         header = QWidget(self.card)
         h_lay = QHBoxLayout(header)
         h_lay.setContentsMargins(10, 10, 10, 10)
@@ -303,8 +310,8 @@ class _UserPopup(ThemedWidget, QFrame):
         )
         return line
 
-    def set_user(self, name: str, role: str):
-        self.header_avatar.set_user(name)
+    def set_user(self, name: str, role: str, photo_path: str | None = None):
+        self.header_avatar.set_user(name, photo_path)
         self.name_lbl.setText(name or "")
         self.role_lbl.setText(role or "")
         self.role_lbl.setVisible(bool(role))
@@ -315,7 +322,7 @@ class _UserPopup(ThemedWidget, QFrame):
             item = self.items_layout.takeAt(0)
             w = item.widget()
             if w is not None:
-                w.hide()               # hide() first: no stray top-level flashes
+                w.hide()
                 w.setParent(None)
                 w.deleteLater()
 
@@ -424,6 +431,7 @@ class UserMenuButton(ThemedWidget, QWidget):
         self._closed_at = 0.0
         self._name = ""
         self._role = ""
+        self._photo_path: str | None = None
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 5, 10, 5)
@@ -447,10 +455,11 @@ class UserMenuButton(ThemedWidget, QWidget):
 
     # ---------- public API ----------
 
-    def set_user(self, name: str, role: str = ""):
+    def set_user(self, name: str, role: str = "", photo_path: str | None = None):
         self._name = name or ""
         self._role = role or ""
-        self.avatar.set_user(self._name)
+        self._photo_path = photo_path
+        self.avatar.set_user(self._name, self._photo_path)
 
         font = QFont(self.font())
         font.setPixelSize(13)
@@ -460,6 +469,12 @@ class UserMenuButton(ThemedWidget, QWidget):
         self.role_lbl.setText(self._role)
         self.role_lbl.setVisible(bool(self._role))
         self.setToolTip(self._name)
+
+    def set_photo(self, photo_path: str | None):
+        self._photo_path = photo_path
+        self.avatar.set_user(self._name, self._photo_path)
+        if self._popup is not None:
+            self._popup.set_user(self._name, self._role, self._photo_path)
 
     def add_item(self, text: str, callback, icon: str = "", danger: bool = False):
         self._entries.append(("item", text, icon, danger, callback))
@@ -479,8 +494,6 @@ class UserMenuButton(ThemedWidget, QWidget):
         if self._popup is not None and self._popup.isVisible():
             self._popup.hide()
             return
-        # A press on the trigger closes an open popup (Qt.Popup behaviour);
-        # without this guard the release would immediately re-open it.
         if time.monotonic() - self._closed_at < 0.25:
             return
         self._open_popup()
@@ -492,7 +505,7 @@ class UserMenuButton(ThemedWidget, QWidget):
         if self._entries_dirty:
             self._popup.set_entries(self._entries)
             self._entries_dirty = False
-        self._popup.set_user(self._name, self._role)
+        self._popup.set_user(self._name, self._role, self._photo_path)
         self._open = True
         self.chevron.set_open(True)
         self.update()
@@ -508,7 +521,6 @@ class UserMenuButton(ThemedWidget, QWidget):
         if self._popup is not None:
             self._popup.hide()
         if callback is not None:
-            # Run after the popup has fully closed so dialogs open cleanly.
             QTimer.singleShot(0, lambda: callback())
 
     # ---------- interaction ----------

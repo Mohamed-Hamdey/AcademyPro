@@ -24,8 +24,9 @@ from qtpy.QtWidgets import (
     QScrollArea, QFrame, QLineEdit, QStackedWidget, QMenu, QInputDialog,
     QButtonGroup,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt,QTimer
 from qtpy.QtGui import QAction
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from repositories import championships_repo
@@ -171,18 +172,22 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         self.debouncer = Debouncer(250, self.refresh, parent=self)
         self.search.textChanged.connect(self.debouncer.trigger)
 
-        self.add_btn = QPushButton(t("champ.add"))
+        self.add_btn = QPushButton("+ " + t("champ.add"))
         self.add_btn.clicked.connect(self._on_add)
 
         self.toolbar.add_leading(self.search, stretch=1)
         self.toolbar.add_trailing(self.add_btn)
-        layout.addWidget(self.toolbar)
+        layout.addWidget(self.toolbar) # <-- No stretch
 
         # Segment chips (filters) — styled by theme.py's "segment" class
-        chips_row = QHBoxLayout()
-        self.chip_all = QPushButton(t("champ.filter.all"), page)
-        self.chip_upcoming = QPushButton(t("champ.filter.upcoming"), page)
-        self.chip_finished = QPushButton(t("champ.filter.finished"), page)
+        chips_container = QWidget(page)
+        chips_row = QHBoxLayout(chips_container)
+        chips_row.setContentsMargins(0, 0, 0, 0)
+        chips_row.setSpacing(SPACING["sm"])
+        
+        self.chip_all = QPushButton(t("champ.filter.all"), chips_container)
+        self.chip_upcoming = QPushButton(t("champ.filter.upcoming"), chips_container)
+        self.chip_finished = QPushButton(t("champ.filter.finished"), chips_container)
 
         self.chips_group = [self.chip_all, self.chip_upcoming, self.chip_finished]
         self._chip_buttons = QButtonGroup(self)
@@ -197,7 +202,8 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
             chips_row.addWidget(chip)
         self.chip_all.setChecked(True)
         chips_row.addStretch()
-        layout.addLayout(chips_row)
+        
+        layout.addWidget(chips_container) # <-- No stretch
 
         # Scroll Area
         self.scroll = QScrollArea()
@@ -211,14 +217,14 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         self.cards_layout.addStretch()
 
         self.scroll.setWidget(self.cards_widget)
-        layout.addWidget(self.scroll, stretch=1)
+        layout.addWidget(self.scroll, stretch=1) # <-- STRETCH=1
 
         # Two empty states, created once and toggled in refresh().
         self.empty_first_run = EmptyState(icon="🏆", message=t("champ.empty"))
         self.empty_no_results = EmptyState(icon="🏆", message=t("champ.empty.no_results"))
         for empty in (self.empty_first_run, self.empty_no_results):
             empty.hide()
-            layout.addWidget(empty)
+            layout.addWidget(empty, stretch=1) # <-- STRETCH=1
 
         self.stack.addWidget(page)
         self.stack.setCurrentIndex(0)
@@ -257,7 +263,9 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
                 w.deleteLater()
 
     def refresh(self):
-        # Freeze painting while we rebuild so the list doesn't flicker.
+        # Freeze painting while we rebuild so the list doesn't flicker
+        # and the layout doesn't thrash during empty-state toggling.
+        self.setUpdatesEnabled(False)
         self.cards_widget.setUpdatesEnabled(False)
         self.scroll.setUpdatesEnabled(False)
 
@@ -320,7 +328,13 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
                 self.empty_no_results.setVisible(filtered)
                 self.empty_first_run.setVisible(not filtered)
 
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception("Failed to refresh championships")
+            
         finally:
+            # Unfreeze painting in one single frame
+            self.setUpdatesEnabled(True)
             self.cards_widget.setUpdatesEnabled(True)
             self.scroll.setUpdatesEnabled(True)
             self.cards_widget.update()
@@ -367,7 +381,8 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
             self._open_detail(champ.championship_id)
         elif action == act_edit:
             dlg = ChampionshipFormDialog(champ, parent=self)
-            if dlg.exec(): self.refresh()
+            if dlg.exec():
+                QTimer.singleShot(0, self.refresh)
         elif action == act_dup:
             self._on_duplicate(champ)
         elif action == act_del:
@@ -384,18 +399,22 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
                     f"{champ.name} (Copy)", date_str, champ.activity_id,
                     champ.location, champ.entry_fee, champ.notes
                 )
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
             except Exception as e:
                 warn(self, t("msg.error"), str(e))
 
     def _on_delete(self, champ):
         if ask(self, t("champ.confirm.delete_title"), t("champ.confirm.delete_msg", name=champ.name)):
             championships_repo.archive_championship(champ.championship_id)
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_add(self):
         dlg = ChampionshipFormDialog(parent=self)
-        if dlg.exec(): self.refresh()
+        if dlg.exec():
+            # Defer the refresh by one event-loop tick so the dialog's
+            # dismissal frame is fully painted before we rebuild the list.
+            
+            QTimer.singleShot(0, self.refresh)
 
     def _open_detail(self, champ_id):
         detail = ChampionshipDetailScreen(champ_id, on_back=self._close_detail, parent=self)
@@ -422,4 +441,4 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         curr.deleteLater()
         
         # 5. Refresh the list
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
