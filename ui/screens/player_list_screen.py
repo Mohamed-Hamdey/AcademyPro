@@ -182,7 +182,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
-        page_layout.setSpacing(SPACING["md"])
+        page_layout.setSpacing(SPACING["sm"])
 
         # ---- Toolbar row (filters) ----
         self.toolbar = Toolbar()
@@ -223,11 +223,17 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
         page_layout.addWidget(self.toolbar)
 
-        # ---- Activity tabs (segmented control) ----
+        # ---- Activity tabs + Reset Button row ----
+        tabs_container = QWidget()
+        tabs_row = QHBoxLayout(tabs_container)
+        tabs_row.setContentsMargins(0, 0, 0, 0)
+        tabs_row.setSpacing(SPACING["sm"]) # Better spacing between tabs and reset
+
+        # 1. The scrollable tabs area (now first, so it sits on the right in RTL)
         self.tabs_container = QScrollArea()
         self.tabs_container.setWidgetResizable(True)
         self.tabs_container.setFrameShape(QFrame.Shape.NoFrame)
-        self.tabs_container.setMaximumHeight(56)
+        self.tabs_container.setMaximumHeight(44)
         self.tabs_container.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -236,38 +242,25 @@ class PlayerListScreen(ThemedWidget, QWidget):
         tabs_layout = QHBoxLayout(tabs_widget)
         tabs_layout.setContentsMargins(0, 0, 0, 0)
         tabs_layout.setSpacing(SPACING["xs"])
-
-        self._tab_buttons = []       # list of (button, activity_id or None)
-        tabs_layout.addStretch()      # trailing stretch pushes tabs left
+        
+        self._tab_buttons = []
+        tabs_layout.addStretch() # trailing stretch inside the scroll area
 
         tabs_widget.setLayout(tabs_layout)
         self.tabs_container.setWidget(tabs_widget)
         self._tabs_layout = tabs_layout
         self._tabs_widget = tabs_widget
 
-        page_layout.addWidget(self.tabs_container)
+        tabs_row.addWidget(self.tabs_container, stretch=1)
 
-        # ---- Reset button (appears dynamically, zero layout impact when hidden) ----
+        # 2. The Reset button (now last, so it sits on the far left in RTL)
         self.reset_button = ghost_button("↺  " + t("players.filter.reset"))
         self.reset_button.setToolTip(t("players.filter.reset_hint"))
         self.reset_button.clicked.connect(self._reset_filters)
-        self.reset_button.hide()
-
-        self.reset_container = QWidget()
-        self.reset_container.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
-        )
-        reset_row = QHBoxLayout(self.reset_container)
-        # FIX: Remove margins entirely so when the button is hidden, 
-        # the container collapses to 0px, pushing the table UP.
-        reset_row.setContentsMargins(0, 0, 0, 0)
-        reset_row.setSpacing(0)
-        reset_row.addStretch()
-        reset_row.addWidget(self.reset_button)
-        self.reset_container.setLayout(reset_row)
-
-        page_layout.addWidget(self.reset_container)
+        self.reset_button.hide()  # hidden until a filter is active
+        tabs_row.addWidget(self.reset_button)
+        
+        page_layout.addWidget(tabs_container)
 
         # ---- Summary strip ----
         self.summary_widget = QWidget()
@@ -327,10 +320,8 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self.table.horizontalHeader().setSectionResizeMode(
             5, QHeaderView.ResizeMode.Fixed
         )
-        self.table.setColumnWidth(5, 120)
         self.table.setColumnWidth(5, 170)
         self.table.horizontalHeader().setMinimumSectionSize(100)
-
 
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(40)
