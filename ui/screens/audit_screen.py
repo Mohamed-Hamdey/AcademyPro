@@ -37,8 +37,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from repositories import audit_repo
 from services import audit_service
 from config.config_loader import load_config
-from ui.components import Toolbar, SectionCard, EmptyState
-from ui.theme import theme, ThemedWidget, make_danger, make_secondary
+from ui.components import Toolbar, SectionCard, EmptyState,ghost_button
+from ui.theme import theme, ThemedWidget, make_danger, make_secondary,make_ghost
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
 from ui.table_helpers import make_standard_table
@@ -82,6 +82,8 @@ class AuditScreen(ThemedWidget, QWidget):
             # querying — otherwise they render empty on first open.
             self.reload_filter_options()
             self.refresh()
+            self._update_reset_visibility()   # <-- add this
+
     def hideEvent(self, event):
         super().hideEvent(event)
         # Any other screen could have written new audit rows — re-read on
@@ -108,27 +110,40 @@ class AuditScreen(ThemedWidget, QWidget):
 
         self.action_filter = QComboBox()
         self.action_filter.setMinimumWidth(180)
-        self.action_filter.currentIndexChanged.connect(self.refresh)
+        self.action_filter.currentIndexChanged.connect(
+            self._on_filter_changed
+        )
 
         self.user_filter = QComboBox()
         self.user_filter.setMinimumWidth(140)
-        self.user_filter.currentIndexChanged.connect(self.refresh)
+        self.user_filter.currentIndexChanged.connect(
+            self._on_filter_changed
+        )
+
+        self.search_input.textChanged.connect(
+            self._update_reset_visibility
+        )
+
+        self.user_filter = QComboBox()
+        self.user_filter.setMinimumWidth(140)
+        self.user_filter.currentIndexChanged.connect(self._on_filter_changed)
 
         self.date_from = QDateEdit()
         self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy-MM-dd")
         self.date_from.setDate(QDate.currentDate().addDays(-30))
-        self.date_from.dateChanged.connect(self.refresh)
+        self.date_from.dateChanged.connect(self._on_filter_changed)
 
         self.date_to = QDateEdit()
         self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy-MM-dd")
         self.date_to.setDate(QDate.currentDate())
-        self.date_to.dateChanged.connect(self.refresh)
+        self.date_to.dateChanged.connect(self._on_filter_changed)
 
-        self.reset_btn = QPushButton(t("audit.clear_filters"))
-        make_secondary(self.reset_btn)
+        self.reset_btn = QPushButton("↺  " + t("audit.clear_filters"))
+        make_ghost(self.reset_btn)
         self.reset_btn.clicked.connect(self._clear_filters)
+        self.reset_btn.hide()   # <-- add this: hidden until a filter is set
 
         self.toolbar.add_leading(self.search_input, stretch=1)
         self.toolbar.add_leading(self.action_filter)
@@ -394,26 +409,61 @@ class AuditScreen(ThemedWidget, QWidget):
     # ------------------------------------------------------------------
 
     def _clear_filters(self):
-        # Block signals while resetting so we don't fire a refresh per widget.
-        self.search_input.blockSignals(True)
-        self.action_filter.blockSignals(True)
-        self.user_filter.blockSignals(True)
-        self.date_from.blockSignals(True)
-        self.date_to.blockSignals(True)
+        """Restore all filter defaults and refresh exactly once."""
+        try:
+            self._search_debouncer.stop()
+        except (AttributeError, RuntimeError):
+            pass
 
-        self.search_input.setText("")
-        self.action_filter.setCurrentIndex(0)
-        self.user_filter.setCurrentIndex(0)
-        self.date_from.setDate(QDate.currentDate().addDays(-30))
-        self.date_to.setDate(QDate.currentDate())
+        widgets = (
+            self.search_input,
+            self.action_filter,
+            self.user_filter,
+            self.date_from,
+            self.date_to,
+        )
 
-        self.search_input.blockSignals(False)
-        self.action_filter.blockSignals(False)
-        self.user_filter.blockSignals(False)
-        self.date_from.blockSignals(False)
-        self.date_to.blockSignals(False)
+        for widget in widgets:
+            widget.blockSignals(True)
 
-        self.refresh()   # ← THE FIX — apply the reset immediately
+        try:
+            self.search_input.clear()
+            self.action_filter.setCurrentIndex(0)
+            self.user_filter.setCurrentIndex(0)
+            self.date_from.setDate(QDate.currentDate().addDays(-30))
+            self.date_to.setDate(QDate.currentDate())
+        finally:
+            for widget in widgets:
+                widget.blockSignals(False)
+
+        self._update_reset_visibility()
+        self.refresh()
+        
+        # ---------- filter state / reset visibility ----------
+
+    def _has_active_filters(self) -> bool:
+        if self.search_input.text().strip():
+            return True
+        if self.action_filter.currentData() is not None:
+            return True
+        if self.user_filter.currentData() is not None:
+            return True
+        # Date range: default is today → today - 30 days
+        today = QDate.currentDate()
+        default_from = today.addDays(-30)
+        if self.date_from.date() != default_from:
+            return True
+        if self.date_to.date() != today:
+            return True
+        return False
+
+    def _update_reset_visibility(self):
+        if hasattr(self, "reset_btn"):
+            self.reset_btn.setVisible(self._has_active_filters())
+
+    def _on_filter_changed(self, *args):
+        self._update_reset_visibility()
+        self.refresh()
     # ------------------------------------------------------------------
     # Export CSV
     # ------------------------------------------------------------------

@@ -1076,6 +1076,8 @@
 "champ.detail.export_done": "تم حفظ النتائج في: {path}",
 "champ.detail.empty": "لا يوجد لاعبون معينون في هذه البطولة بعد.",
 "champ.detail.action.assign": "تعيين لاعبين",
+"players.filter.reset": "إعادة تعيين",
+"players.filter.reset_hint": "مسح البحث وكل عوامل التصفية",
 "champ.detail.action.delete": "حذف البطولة",
 "champ.result.none": "—",
 "champ.confirm.delete_champ_title": "حذف البطولة",

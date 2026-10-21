@@ -1076,6 +1076,8 @@
 "champ.result.none": "—",
 "champ.confirm.delete_champ_title": "Delete Championship",
 "champ.assign.select_all": "Select All",
+"players.filter.reset": "Reset",
+"players.filter.reset_hint": "Clear search and all filters",
 "champ.assign.already": "Already assigned",
 "champ.assign.btn": "Assign ({n})",
 "champ.assign.weight_suffix": " kg",

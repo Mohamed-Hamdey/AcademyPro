@@ -108,6 +108,12 @@ LIGHT = {
     "medal_gold_soft": "#FCF4D2",
     "medal_silver_soft": "#F0F0F0",
     "medal_bronze_soft": "#F5E6D8",
+        # Toggle switch (Light/Dark mode switch)
+    "toggle_active":       "#3768DA",   # Green — matches your reference image
+    "toggle_active_hover": "#4AAFDE",
+    "toggle_inactive":     "#CBD5E1",   # Muted slate when off
+    "toggle_knob":         "#FFFFFF",   # White circle
+    "toggle_glyph":        "#FFFFFF",   # Checkmark / moon icon color
 }
 
 # Dark theme — from the design brief, section 2.
@@ -194,6 +200,13 @@ DARK = {
     "medal_gold_soft": "#3D3313",
     "medal_silver_soft": "#2A2A2A",
     "medal_bronze_soft": "#3B2616",
+    
+        # Toggle switch (Light/Dark mode switch)
+    "toggle_active":       "#2253C5",   # Keep the same green (it pops on dark)
+    "toggle_active_hover": "#4AAFDE",
+    "toggle_inactive":     "#374151",   # Dark slate
+    "toggle_knob":         "#F3F4F6",   # Off-white circle
+    "toggle_glyph":        "#111827",   # Dark glyph on the off-white knob
 
 
 

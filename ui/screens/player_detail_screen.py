@@ -43,8 +43,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.on_back = on_back
         self._active_subs = []
         self._build_ui()
-        self.refresh()
         self._init_theme()
+        self.refresh()
+
 
     # ---------- UI ----------
     # ---------- lifecycle: header action hook ----------
@@ -71,11 +72,12 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             ws.set_header_action(self.back_button)
 
     def _uninstall_header_action(self):
-        """Remove the Back button from the Workspace header."""
-        ws = self._find_workspace()
-        if ws is not None and hasattr(ws, "set_header_action"):
-            if getattr(ws, "_header_action_widget", None) is self.back_button:
-                ws.set_header_action(None)
+        workspace = self._find_workspace()
+        if (
+            workspace is not None
+            and workspace._header_action_widget is self.back_button
+        ):
+            workspace.set_header_action(None)
 
     def _find_workspace(self):
         """Walk up the parent chain looking for a Workspace instance."""

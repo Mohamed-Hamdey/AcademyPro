@@ -23,7 +23,7 @@ from qtpy.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,QStyledItemDelegate
 )
 from qtpy.QtGui import QColor, QPainter, QFont, QFontMetrics,QPen
-from qtpy.QtCore import Qt, QRectF,Signal
+from qtpy.QtCore import Qt, QRectF,Signal,QTimer
 
 
 
@@ -896,3 +896,327 @@ class PillDelegate(QStyledItemDelegate):
         painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, text)
 
         painter.restore()
+        
+        
+"""
+ThemeToggleSwitch — animated Light/Dark pill switch.
+
+Drop-in replacement for the old class. If this class lives in
+ui/components.py, merge the imports below with the ones already there
+(most of them are probably present already) and paste the class over the old one.
+"""
+
+import math
+
+from qtpy.QtCore import (
+    Qt, QRectF, QLineF, QPointF, QEvent, QPropertyAnimation,
+    QAbstractAnimation, QEasingCurve, Property,
+)
+from qtpy.QtGui import QPainter, QPainterPath, QColor, QPen, QBrush
+from qtpy.QtWidgets import QWidget, QSizePolicy
+
+from ui.theme import theme, ThemedWidget
+from ui.i18n import t
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def _lerp_color(a: QColor, b: QColor, k: float) -> QColor:
+    k = _clamp01(k)
+    return QColor(
+        int(a.red()   + (b.red()   - a.red())   * k),
+        int(a.green() + (b.green() - a.green()) * k),
+        int(a.blue()  + (b.blue()  - a.blue())  * k),
+        int(a.alpha() + (b.alpha() - a.alpha()) * k),
+    )
+
+
+def _tok(name: str, fallback_token: str, default: str) -> QColor:
+    """
+    Resolve a colour without ever raising: try the dedicated toggle token,
+    then an existing design token, then a hard default. (theme().color()
+    raises KeyError on unknown tokens, and an exception inside paintEvent
+    can abort a PyQt6 app.)
+    """
+    try:
+        pal = theme().palette()
+        return QColor(pal.get(name) or pal.get(fallback_token) or default)
+    except Exception:
+        return QColor(default)
+
+
+def _draw_sun(p: QPainter, cx: float, cy: float, r: float, color: QColor, rotation: float = 0.0):
+    p.save()
+    p.translate(cx, cy)
+    p.rotate(rotation)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(color))
+    core = r * 0.62
+    p.drawEllipse(QPointF(0, 0), core, core)
+
+    p.setPen(QPen(color, 1.5, Qt.PenStyle.SolidLine,
+                  Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    for i in range(8):
+        a = math.radians(i * 45)
+        c, s = math.cos(a), math.sin(a)
+        p.drawLine(QLineF(c * r * 0.98, s * r * 0.98, c * r * 1.40, s * r * 1.40))
+    p.restore()
+
+
+def _draw_moon(p: QPainter, cx: float, cy: float, r: float, color: QColor):
+    """A real crescent: a disc with an offset disc cut out of it."""
+    outer = QPainterPath()
+    outer.addEllipse(QPointF(cx, cy), r * 1.10, r * 1.10)
+    cut = QPainterPath()
+    cut.addEllipse(QPointF(cx + r * 0.55, cy - r * 0.45), r * 0.95, r * 0.95)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(color))
+    p.drawPath(outer.subtracted(cut))
+
+
+# ---------------------------------------------------------------------------
+# Widget
+# ---------------------------------------------------------------------------
+
+class ThemeToggleSwitch(ThemedWidget, QWidget):
+    """
+    Animated pill-shaped Light/Dark toggle.
+
+    Visual:
+      - Rounded track: slate when light mode, primary colour when dark mode.
+      - White knob that slides between the ends. The knob shows a sun in
+        light mode and a crescent moon in dark mode (cross-fades while sliding,
+        the sun rotates a little).
+      - The *other* mode's icon sits faintly on the empty end of the track,
+        so both states are always readable.
+
+    Behaviour:
+      - Click (release inside the widget), Space, Enter or Return toggles.
+      - The knob animates FIRST (200 ms, OutCubic); the theme is swapped when
+        the animation finishes. Swapping the theme repaints the whole app and
+        blocks the event loop, so doing it mid-animation made the knob jump.
+      - RTL aware: in an RTL layout the knob travels right-to-left.
+      - Keyboard focus ring (Tab only; not shown after a mouse click).
+      - Follows theme changes made elsewhere (restyle() re-syncs the knob).
+
+    Optional design tokens (each falls back to an existing token):
+      toggle_active   -> primary
+      toggle_inactive -> text_disabled
+      toggle_knob     -> text_on_primary
+    """
+
+    _TRACK_W = 58
+    _TRACK_H = 30
+    _PAD = 3              # space around the track, used by the focus ring
+    _KNOB_MARGIN = 4
+    _ANIM_MS = 160
+
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+        self.setObjectName("themeToggleSwitch")
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setFixedSize(self._TRACK_W + 2 * self._PAD, self._TRACK_H + 2 * self._PAD)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        # 0.0 = light mode, 1.0 = dark mode (tweened by the animation).
+        self._knob_t = 1.0 if theme().is_dark() else 0.0
+        self._hover = False
+        self._pressed = False
+        self._pending_toggle = False
+
+        self._anim = QPropertyAnimation(self, b"knob_t", self)
+        self._anim.setDuration(self._ANIM_MS)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.finished.connect(self._on_anim_finished)
+
+        self._sync_text()
+        self._init_theme()
+
+    # ------------------------------------------------------------------
+    # Animated property
+    # ------------------------------------------------------------------
+
+    def get_knob_t(self) -> float:
+        return self._knob_t
+
+    def set_knob_t(self, value: float):
+        self._knob_t = _clamp01(float(value))
+        self.update()
+
+    knob_t = Property(float, get_knob_t, set_knob_t)
+
+    # ------------------------------------------------------------------
+    # Interaction
+    # ------------------------------------------------------------------
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._pressed = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._pressed:
+            self._pressed = False
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            if self.rect().contains(pos):
+                self._toggle()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._toggle()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self._pressed = False
+        self.update()
+        super().leaveEvent(event)
+
+    def focusInEvent(self, event):
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self.update()
+        super().focusOutEvent(event)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.LayoutDirectionChange:
+            self.update()
+        super().changeEvent(event)
+
+    def _toggle(self):
+        if self._pending_toggle:
+            return
+        self._pending_toggle = True
+        target = 0.0 if theme().is_dark() else 1.0
+        self._anim.stop()
+        self._anim.setStartValue(self._knob_t)
+        self._anim.setEndValue(target)
+        self._anim.start()
+        # Kick off the theme swap NOW. It's the expensive part; start it
+        # while the knob is already moving so the user perceives it as instant.
+        QTimer.singleShot(0, theme().toggle)
+
+    def _on_anim_finished(self):
+        self._pending_toggle = False
+        # No theme().toggle() here anymore — it already fired.
+
+    # ------------------------------------------------------------------
+    # ThemedWidget contract
+    # ------------------------------------------------------------------
+
+    def _sync_text(self):
+        dark = theme().is_dark()
+        tip = t("theme.switch_to_light") if dark else t("theme.switch_to_dark")
+        self.setToolTip(tip)
+        self.setAccessibleName(tip)
+
+    def restyle(self):
+        # Keep the knob in sync when the theme was changed elsewhere
+        # (other toggle button, startup, etc.), but never fight a running animation.
+        if self._anim.state() != QAbstractAnimation.State.Running:
+            self._knob_t = 1.0 if theme().is_dark() else 0.0
+        self._sync_text()
+        self.update()
+
+    # ------------------------------------------------------------------
+    # Painting
+    # ------------------------------------------------------------------
+
+    def paintEvent(self, event):
+        active = _tok("toggle_active", "primary", "#2563EB")
+        inactive = _tok("toggle_inactive", "text_disabled", "#94A3B8")
+        knob_color = _tok("toggle_knob", "text_on_primary", "#FFFFFF")
+        sun_color = QColor("#F59E0B")
+        moon_color = active.darker(115)
+
+        k = self._knob_t
+        rtl = self.layoutDirection() == Qt.LayoutDirection.RightToLeft
+
+        w = float(self._TRACK_W)
+        h = float(self._TRACK_H)
+        m = float(self._KNOB_MARGIN)
+        knob_d = h - m * 2
+        left_cx = m + knob_d / 2.0
+        travel = w - m * 2 - knob_d
+
+        def cx_for(tt: float) -> float:
+            frac = (1.0 - tt) if rtl else tt
+            return left_cx + travel * frac
+
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.translate(self._PAD, self._PAD)
+
+            # ---- track ----
+            track = _lerp_color(inactive, active, k)
+            if self._hover:
+                track = track.lighter(108)
+            track_rect = QRectF(0, 0, w, h)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(track))
+            painter.drawRoundedRect(track_rect, h / 2.0, h / 2.0)
+
+            # ---- faint icons for the mode the knob is NOT on ----
+            r = knob_d * 0.26
+            cy = h / 2.0
+            white = QColor("#FFFFFF")
+            painter.setOpacity(_clamp01(1.0 - k) * 0.75)
+            _draw_moon(painter, cx_for(1.0), cy, r * 0.95, white)
+            painter.setOpacity(_clamp01(k) * 0.75)
+            _draw_sun(painter, cx_for(0.0), cy, r * 0.95, white)
+            painter.setOpacity(1.0)
+
+            # ---- knob (two-layer soft shadow + fill) ----
+            kcx = cx_for(k)
+            kr = knob_d / 2.0
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 18))
+            painter.drawEllipse(QPointF(kcx, cy + 0.8), kr + 0.8, kr + 0.8)
+            painter.setBrush(QColor(0, 0, 0, 28))
+            painter.drawEllipse(QPointF(kcx, cy + 1.6), kr, kr)
+            painter.setBrush(QBrush(knob_color))
+            painter.drawEllipse(QPointF(kcx, cy), kr, kr)
+
+            # ---- glyph on the knob: sun -> moon cross-fade ----
+            sun_op = _clamp01(1.0 - 2.0 * k)
+            moon_op = _clamp01(2.0 * k - 1.0)
+            if sun_op > 0.0:
+                painter.setOpacity(sun_op)
+                _draw_sun(painter, kcx, cy, r, sun_color, rotation=k * 120.0)
+            if moon_op > 0.0:
+                painter.setOpacity(moon_op)
+                _draw_moon(painter, kcx, cy, r, moon_color)
+            painter.setOpacity(1.0)
+
+            # ---- keyboard focus ring ----
+            if self.hasFocus():
+                ring = QColor(_tok("primary", "primary", "#2563EB"))
+                painter.setPen(QPen(ring, 2))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(track_rect.adjusted(-2, -2, 2, 2),
+                                        h / 2.0 + 2, h / 2.0 + 2)
+        finally:
+            painter.end()

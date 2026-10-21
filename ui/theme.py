@@ -1,29 +1,10 @@
 """
-Global app theme (v4.2) — driven by ui/design.py tokens.
+Global app theme (v4.3) — driven by ui/design.py tokens.
 
-What changed in v4.2 (public API is unchanged — every function, class and
-constant from v4.1 is still here with the same signature):
-
-  * Icons (combo arrow, spin arrows, checkbox tick) are now generated as
-    small PNG files on first use and referenced by file path. Qt style
-    sheets do not reliably support `url(data:...)` URIs, which is what
-    produced the little square glyphs instead of arrows. The icons are
-    drawn with QPainter (no SVG plugin needed, so PyInstaller builds work)
-    and are coloured from the active theme tokens.
-  * Tables now style QTableView, so QTableWidget AND future QTableView
-    screens (delegate based lists) share one look. Added hover, header
-    hover, corner button.
-  * Inputs: hover / disabled / invalid states, a "search" variant,
-    QPlainTextEdit, symmetric combo padding so it works in RTL and LTR.
-  * New components styled: QProgressBar (with state colours), QRadioButton,
-    QToolButton, QMessageBox, QSplitter, QScrollArea.
-  * New button classes: "success" and "segment" (checkable pill used for
-    activity tabs / filter chips).
-  * New label classes: "muted", "caption", "title".
-  * Missing hover/pressed/soft tokens are derived from the base colour
-    instead of silently falling back to light-mode hex values.
-  * Removed the invalid `QLineEdit::placeholder` rule (placeholder colour
-    comes from the palette, set in build_palette()).
+v4.3 changes:
+  * QSS strings are now cached per mode. Rebuilding the full stylesheet
+    on every theme toggle was the main cause of the switch delay.
+  * apply() now reuses the cached string; only the QPalette is rebuilt.
 """
 
 from __future__ import annotations
@@ -478,8 +459,7 @@ QPushButton[cssClass="ghost"]:disabled {{
     color: {btn_disabled_text};
 }}
 
-/* Segment / chip: checkable pill (activity tabs, quick filters).
-   Usage: btn.setCheckable(True); make_segment(btn) */
+/* Segment / chip: checkable pill (activity tabs, quick filters). */
 QPushButton[cssClass="segment"] {{
     background-color: {surface};
     color: {text_secondary};
@@ -735,9 +715,7 @@ QTableCornerButton::section {{
     border-bottom: 1px solid {border};
 }}
 
-/* ==================== Progress bars ====================
-   Set bar.setProperty("state", "success" | "warning" | "danger") and
-   polish_widget(bar). Use setTextVisible(False) for slim session bars. */
+/* ==================== Progress bars ==================== */
 QProgressBar {{
     background-color: {divider};
     border: none;
@@ -857,10 +835,7 @@ QMessageBox QPushButton {{
     min-width: 80px;
 }}
 
-/* ==================== Date picker popup ====================
-   QCalendarWidget's day grid is itself a QTableView, so it must be
-   explicitly shielded from the generic table rules above (item padding,
-   hover, header padding) — those were clipping the day numbers. */
+/* ==================== Date picker popup ==================== */
 QCalendarWidget QWidget {{
     background-color: {surface};
     color: {text};
@@ -967,6 +942,18 @@ _SETTINGS_ORG = "MembershipSystem"
 _SETTINGS_APP = "theme"
 _PALETTES = {"light": LIGHT, "dark": DARK}
 
+# v4.3: QSS strings are cached per mode. Rebuilding them on every toggle
+# was the source of the perceived lag — string formatting + icon URL
+# lookups for ~200 QSS rules is real work, and it was happening on the
+# UI thread every time the theme changed.
+_QSS_CACHE: dict = {}
+
+
+def _get_stylesheet(mode: str) -> str:
+    if mode not in _QSS_CACHE:
+        _QSS_CACHE[mode] = build_stylesheet(mode)
+    return _QSS_CACHE[mode]
+
 
 class ThemeManager(QObject):
     theme_changed = Signal(str)
@@ -1061,14 +1048,13 @@ class ThemeManager(QObject):
         """
         Apply the current theme.
 
-        Setting the app palette + stylesheet is enough — Qt
-        automatically re-polishes every widget on the next paint, and
-        every theme-reactive widget re-registers via theme().on_change.
-        Do NOT walk the widget tree manually: that forces a synchronous
-        polish per widget and is what made theme switching take seconds.
+        v4.3: The QSS string is fetched from a cache — first switch of
+        each mode is the only one that pays the string-building cost.
+        All subsequent switches just call app.setStyleSheet() with the
+        pre-built string, which Qt handles natively.
         """
         app.setPalette(self.build_palette())
-        app.setStyleSheet(build_stylesheet(self._mode))
+        app.setStyleSheet(_get_stylesheet(self._mode))
 
     @staticmethod
     def _deep_repolish(widget):
@@ -1157,8 +1143,11 @@ class ThemedWidget:
         self.restyle()
         theme().on_change(self._on_theme_change)
 
+        # NOTE (v4.4): Removed the _deep_repolish call here. app.setStyleSheet()
+        # already forces Qt to re-polish the entire widget tree on theme change.
+        # Doing it again per-ThemedWidget was O(n²) and caused multi-second
+        # theme switches on heavy screens.
         try:
-            ThemeManager._deep_repolish(self)
             top = self.window() if hasattr(self, "window") else self
             if top is not None:
                 top.update()
@@ -1255,35 +1244,24 @@ def set_progress_state(bar, state: Optional[str]):
 
 
 # ---------------------------------------------------------------------------
-# Toggle buttons
+# Theme toggle switch (NEW in v4.3 — replaces theme_toggle_button)
 # ---------------------------------------------------------------------------
-
-def theme_toggle_button() -> QPushButton:
-    btn = QPushButton()
-    btn.setObjectName("themeToggle")
-    make_secondary(btn)
-    _refresh_toggle_label(btn)
-
-    def _on_click():
-        theme().toggle()
-        _refresh_toggle_label(btn)
-
-    btn.clicked.connect(_on_click)
-    theme().on_change(lambda _m: _refresh_toggle_label(btn))
-    return btn
+#
+# See ui/components.py for the ThemeToggleSwitch implementation. We
+# re-export it here so shell.py's call to theme_toggle_button() keeps
+# working without any changes.
 
 
-def _refresh_toggle_label(btn):
-    try:
-        from ui.i18n import t
-        if theme().is_dark():
-            btn.setText("☀   " + t("theme.light_mode"))
-            btn.setToolTip(t("theme.switch_to_light"))
-        else:
-            btn.setText("☾   " + t("theme.dark_mode"))
-            btn.setToolTip(t("theme.switch_to_dark"))
-    except Exception:
-        btn.setText("☾   Dark Mode" if not theme().is_dark() else "☀   Light Mode")
+def theme_toggle_button():
+    """
+    Return a custom animated toggle switch for Light/Dark mode.
+
+    Kept under the old name so ui/shell.py (which calls it from
+    TopBar._build_ui) doesn't need to change. Delegates to the widget
+    defined in ui/components.py.
+    """
+    from ui.components import ThemeToggleSwitch
+    return ThemeToggleSwitch()
 
 
 def language_toggle_button() -> QPushButton:

@@ -281,7 +281,7 @@ def _build_detail_dict(player, subscriptions):
         "status": "active",
         "activity_names": activity_names,
         "activity_ids": activity_ids,
-        "plan_label": most_urgent.plan_type or "",
+        "plan_label": str(most_urgent.plan_type).strip() if most_urgent.plan_type is not None else "",
         "sessions_remaining": most_urgent.sessions_remaining,
         "sessions_total": most_urgent.sessions_total,
         "expiry_date": most_urgent.expiry_date,

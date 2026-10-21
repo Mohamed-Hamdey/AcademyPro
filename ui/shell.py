@@ -20,6 +20,7 @@ from qtpy.QtWidgets import (
 )
 from qtpy.QtCore import Qt, QSize
 from qtpy.QtGui import QPixmap, QAction
+from ui.user_menu import UserMenuButton
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config.config_loader import get_academy_name, get_academy_logo, load_config
@@ -28,6 +29,7 @@ from ui.i18n import t
 from ui.theme import theme, theme_toggle_button, language_toggle_button
 from ui.design import SHELL, SPACING, RADIUS
 from app_state import app as app_state
+from ui.language_switch import LanguageSwitch
 
 
 # ---------------------------------------------------------------------------
@@ -90,15 +92,13 @@ class TopBar(QWidget):
 
 
 
-        # ---- User menu button ----
-        self.user_button = QPushButton()
-        self.user_button.setObjectName("userMenuButton")
-        self.user_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.user_button.clicked.connect(self._show_user_menu)
-        layout.addWidget(self.user_button)
+        # ---- User menu button (replaces the old QPushButton + QMenu) ----
+        self.user_menu = UserMenuButton(parent=self)
+        self._populate_user_menu()
+        layout.addWidget(self.user_menu)
 
         # ---- Language + theme toggles ----
-        self.language_button = language_toggle_button()
+        self.language_button = LanguageSwitch()
         self.theme_button = theme_toggle_button()
         layout.addWidget(self.language_button)
         layout.addWidget(self.theme_button)
@@ -127,59 +127,47 @@ class TopBar(QWidget):
         if not query:
             return
         self._on_search(query)
-    def _show_user_menu(self):
-        menu = QMenu(self)
-
-        # Header — the current user's display name + role
+    def _populate_user_menu(self):
         user = app_state.user
         if user is not None:
-            header = QAction(f"👤  {user.display_name}", self)
-            header.setEnabled(False)
-            menu.addAction(header)
-
             role_label = t(f"role.{user.role}")
-            role_action = QAction(f"    {role_label}", self)
-            role_action.setEnabled(False)
-            menu.addAction(role_action)
+            self.user_menu.set_user(user.display_name, role_label)
+
+            self.user_menu.add_item(
+                t("menu.change_password"),
+                self._on_change_password,
+                icon="🔑",
+            )
+
+            if app_state.can("settings.manage"):
+                self.user_menu.add_separator()
+                self.user_menu.add_item(
+                    t("menu.backup_now"),
+                    self._on_backup_now_clicked,
+                    icon="💾",
+                )
+                self.user_menu.add_item(
+                    t("menu.restore_backup"),
+                    self._on_restore_backup_clicked,
+                    icon="📥",
+                )
+
+            self.user_menu.add_separator()
+            self.user_menu.add_item(
+                t("menu.about"),
+                self._on_about_clicked,
+                icon="ℹ️",
+            )
+
+            self.user_menu.add_separator()
+            self.user_menu.add_item(
+                t("menu.logout"),
+                self._on_logout_clicked,
+                icon="🚪",
+                danger=True,
+            )
         else:
-            header = QAction(t("menu.not_signed_in"), self)
-            header.setEnabled(False)
-            menu.addAction(header)
-
-        menu.addSeparator()
-
-        # Change password (if logged in)
-        if user is not None:
-            change_pw = QAction(t("menu.change_password"), self)
-            change_pw.triggered.connect(self._on_change_password)
-            menu.addAction(change_pw)
-
-        # Backup / restore — manager-only. Receptionists shouldn't
-        # be able to swap the database out from under themselves.
-        if user is not None and app_state.can("settings.manage"):
-            menu.addSeparator()
-
-            backup_now = QAction(t("menu.backup_now"), self)
-            backup_now.triggered.connect(self._on_backup_now_clicked)
-            menu.addAction(backup_now)
-
-            restore = QAction(t("menu.restore_backup"), self)
-            restore.triggered.connect(self._on_restore_backup_clicked)
-            menu.addAction(restore)
-            
-        # About
-        about = QAction(t("menu.about"), self)
-        about.triggered.connect(self._on_about_clicked)
-        menu.addAction(about)
-
-        menu.addSeparator()
-        # Logout
-        logout = QAction(t("menu.logout"), self)
-        logout.triggered.connect(self._on_logout_clicked)
-        menu.addAction(logout)
-
-        # Show the menu anchored to the button
-        menu.exec(self.user_button.mapToGlobal(self.user_button.rect().bottomLeft()))
+            self.user_menu.set_user(t("menu.not_signed_in"), "")
     def _on_backup_now_clicked(self):
         if self._on_backup is not None:
             self._on_backup()
@@ -242,36 +230,7 @@ class TopBar(QWidget):
                 f"}}"
             )
 
-        # User menu button — style it as a quiet pill
-        # User menu button — style it as a quiet pill with an avatar
-        user = app_state.user
-        if user is not None:
-            self.user_button.setText(f"   {user.display_name}  ▾")
-            # Attach the user's avatar as an icon (photo or initial)
-            try:
-                from ui.screens.users_screen import _avatar_pixmap
-                from qtpy.QtGui import QIcon
-                self.user_button.setIcon(QIcon(_avatar_pixmap(user)))
-                self.user_button.setIconSize(self.user_button.iconSize())
-            except Exception:
-                self.user_button.setIcon(QIcon())
-        else:
-            self.user_button.setText(t("menu.not_signed_in"))
 
-        self.user_button.setStyleSheet(
-            f"QPushButton#userMenuButton {{"
-            f"  background-color: transparent;"
-            f"  color: {tm.color('text')};"
-            f"  border: 1px solid {tm.color('border')};"
-            f"  border-radius: {RADIUS['md']}px;"
-            f"  padding: 6px 12px;"
-            f"  font-weight: 500;"
-            f"  font-size: 13px;"
-            f"}}"
-            f"QPushButton#userMenuButton:hover {{"
-            f"  background-color: {tm.color('surface_alt')};"
-            f"}}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -502,27 +461,33 @@ class Workspace(QWidget):
 
     def set_title(self, title: str):
         self.title_label.setText(title)
+
     def set_header_action(self, widget: QWidget = None):
-        # Detach the previous one — do NOT delete it. It belongs to
-        # whoever passed it in (e.g. a PlayerDetailScreen may reuse
-        # the same button across show/hide cycles).
-        if self._header_action_widget is not None:
-            try:
-                self.header_action_slot.removeWidget(self._header_action_widget)
-            except Exception:
-                pass
-            self._header_action_widget.setParent(None)
-            self._header_action_widget.hide()
+        # Remove the previous action from the header without deleting it.
+        previous = self._header_action_widget
+
+        if previous is not None:
+            self.header_action_slot.removeWidget(previous)
+            previous.hide()
+            previous.setParent(None)
             self._header_action_widget = None
 
-        if widget is not None:
-            # If the widget already exists in some other parent, reparent
-            # it cleanly before adding it here.
-            if widget.parent() is not None and widget.parent() is not self:
-                widget.setParent(self)
-            widget.show()
-            self.header_action_slot.addWidget(widget)
-            self._header_action_widget = widget
+        if widget is None:
+            return
+
+        # Detach from any existing layout before adding it to this header.
+        parent = widget.parentWidget()
+        if parent is not None:
+            layout = parent.layout()
+            if layout is not None:
+                layout.removeWidget(widget)
+
+        widget.hide()
+        widget.setParent(self)
+        self.header_action_slot.addWidget(widget)
+        self._header_action_widget = widget
+        widget.show()
+
     def restyle(self):
         # Only the title label needs inline styling. The workspace
         # background comes from the global QSS (QWidget#workspace rule).
