@@ -1135,9 +1135,16 @@
 
 "dash.payments.method.currency": "عملة",
 "dash.payments.method.visa": "فيزا",
-"dash.payments.method.check": "شيك"
-
-
+"dash.payments.method.check": "شيك",
+"dash.payments.count_label": "دفعة",
+"dash.payments.col.player": "اللاعب",
+"dash.payments.col.date": "التاريخ",
+"dash.payments.no_preference": "مخصص / لا يوجد تفضيل",
+"dash.month.paid_by_time": "المدفوعات حسب وقت الحصة",
+"dash.month.no_payments": "لا توجد مدفوعات مسجلة هذا الشهر.",
+"players.measurement.history_title": "Weight & Belt History",
+"players.measurement.history_title_weight": "Weight History",
+"players.measurement.history_title_belt": "Belt History"
 
 
 }

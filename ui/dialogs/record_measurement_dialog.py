@@ -42,8 +42,12 @@ class _FieldLabel(QWidget):
 
 
 class RecordMeasurementDialog(ThemedWidget, QDialog):
-    def __init__(self, current_weight: float = 0.0, current_belt: str = "", parent=None):
+    def __init__(self, current_weight: float = 0.0, current_belt: str = "", 
+                 requires_belt: bool = True, requires_weight: bool = True, parent=None):
         QDialog.__init__(self, parent)
+        self._requires_belt = requires_belt
+        self._requires_weight = requires_weight
+        
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         self.setUpdatesEnabled(False)
 
@@ -62,27 +66,32 @@ class RecordMeasurementDialog(ThemedWidget, QDialog):
         layout.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
         layout.setSpacing(SPACING["md"])
 
-        # Weight
-        self.weight_input = QDoubleSpinBox(self)
-        self.weight_input.setRange(0, 300)
-        self.weight_input.setSuffix(" kg")
-        self.weight_input.setDecimals(1)
-        self.weight_input.setValue(current_weight or 0.0)
-        layout.addWidget(_FieldLabel(t("players.measurement.weight"), True, self))
-        layout.addWidget(self.weight_input)
+        # Weight (only if required)
+        if self._requires_weight:
+            self.weight_input = QDoubleSpinBox(self)
+            self.weight_input.setRange(0, 300)
+            self.weight_input.setSuffix(" kg")
+            self.weight_input.setDecimals(1)
+            self.weight_input.setValue(current_weight or 0.0)
+            layout.addWidget(_FieldLabel(t("players.measurement.weight"), True, self))
+            layout.addWidget(self.weight_input)
+        else:
+            self.weight_input = None
 
-        # Belt
-        self.belt_combo = QComboBox(self)
-        belts = ["white", "yellow", "orange", "green", "blue", "purple", "brown", "black"]
-        for b in belts:
-            self.belt_combo.addItem(t(f"belt.{b}"), b)
-        if current_belt:
-            idx = self.belt_combo.findData(current_belt.lower())
-            if idx >= 0:
-                self.belt_combo.setCurrentIndex(idx)
-                
-        layout.addWidget(_FieldLabel(t("players.measurement.belt"), False, self))
-        layout.addWidget(self.belt_combo)
+        # Belt (only if required)
+        if self._requires_belt:
+            self.belt_combo = QComboBox(self)
+            belts = ["white", "yellow", "orange", "green", "blue", "purple", "brown", "black"]
+            for b in belts:
+                self.belt_combo.addItem(t(f"belt.{b}"), b)
+            if current_belt:
+                idx = self.belt_combo.findData(current_belt.lower())
+                if idx >= 0:
+                    self.belt_combo.setCurrentIndex(idx)
+            layout.addWidget(_FieldLabel(t("players.measurement.belt"), False, self))
+            layout.addWidget(self.belt_combo)
+        else:
+            self.belt_combo = None
 
         # Notes
         self.notes_input = QLineEdit(self)
@@ -111,8 +120,7 @@ class RecordMeasurementDialog(ThemedWidget, QDialog):
         layout.addLayout(btns)
 
     def get_values(self):
-        return (
-            self.weight_input.value(),
-            self.belt_combo.currentData(),
-            self.notes_input.text().strip() or None,
-        )
+        weight = self.weight_input.value() if self.weight_input else None
+        belt = self.belt_combo.currentData() if self.belt_combo else None
+        notes = self.notes_input.text().strip() or None
+        return weight, belt, notes

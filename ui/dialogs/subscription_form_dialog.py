@@ -109,6 +109,11 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
             self.setUpdatesEnabled(True)
             self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
             self.update()
+            
+        # Initialize state AFTER the dialog is fully constructed
+        self._on_activity_changed()
+        self._on_preset_changed()
+        self._update_expiry_preview()
 
     # ---------- UI ----------
 
@@ -128,10 +133,8 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         self.activity_input = QComboBox(self)
         self._activities = activity_service.list_active()
         for a in self._activities:
-            # Include both names, in case the receptionist sees someone who
-            # doesn't know the app's language.
             display = a.name
-        self.activity_input.addItem(display, a.activity_id)
+            self.activity_input.addItem(display, a.activity_id) # <-- NOW INSIDE THE LOOP
         self.activity_input.currentIndexChanged.connect(self._on_activity_changed)
 
         # ---- Preset dropdown ----
@@ -225,10 +228,7 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         button_row.addWidget(save_button)
         layout.addLayout(button_row)
 
-        # Initialize state
-        self._on_activity_changed()
-        self._on_preset_changed()
-        self._update_expiry_preview()
+
 
     # ---------- theming ----------
 

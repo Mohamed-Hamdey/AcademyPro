@@ -196,12 +196,14 @@ class ScanScreen(ThemedWidget, QWidget):
             self._on_recent_item_double_clicked
         )
         self.recent_list.setMinimumHeight(280)
+        self.recent_list.setFixedHeight(280)
         self.recent_card.body.addWidget(self.recent_list)
 
-        # Empty-state label (hidden when there are rows)
+        # Empty-state label (shown when there are no rows)
         self.recent_empty = QLabel(t("checkin.recent.empty"))
         self.recent_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.recent_empty.setWordWrap(True)
+        self.recent_empty.setFixedHeight(280)   # match the list height
         self.recent_empty.hide()
         self.recent_card.body.addWidget(self.recent_empty)
 
@@ -474,7 +476,9 @@ class ScanScreen(ThemedWidget, QWidget):
         tm = theme()
 
         if not filtered:
-            self.recent_list.hide()
+            # Keep the list visible (just empty) so the layout stays static.
+            self.recent_list.clear()
+            self.recent_list.show()
             self.recent_empty.show()
             return
 

@@ -143,8 +143,12 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._ensure_list_view()          # <-- ADD THIS
+
         if self._dirty:
             self._dirty = False
+            self._reset_to_defaults()
+
             QTimer.singleShot(0, self.refresh)
 
     def hideEvent(self, event):
@@ -439,6 +443,25 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         
         # 4. Delete it safely in the next event loop cycle
         curr.deleteLater()
-        
+        self._reset_to_defaults()
+
         # 5. Refresh the list
         QTimer.singleShot(0, self.refresh)
+        
+    def _reset_to_defaults(self):
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+
+        self._active_chip = self.chip_all
+        self.chip_all.setChecked(True)
+        
+    def _ensure_list_view(self):
+        if self.stack.currentIndex() != 0:
+            for i in range(self.stack.count() - 1, 0, -1):
+                widget = self.stack.widget(i)
+                self.stack.removeWidget(widget)
+                widget.setParent(None)
+                widget.hide()
+                widget.deleteLater()
+            self.stack.setCurrentIndex(0)

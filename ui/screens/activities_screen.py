@@ -98,13 +98,26 @@ class ActivitiesScreen(ThemedWidget, QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._ensure_list_view()
         if self._dirty:
             self._dirty = False
+            self._reset_to_defaults()          
             QTimer.singleShot(0, self.refresh)
 
     def hideEvent(self, event):
         super().hideEvent(event)
         self._dirty = True
+        
+    def _reset_to_defaults(self):
+        """Reset search + filter chips back to their initial state."""
+        # Clear the search input without triggering debounce refresh
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+
+        # Reset chip to "All"
+        self._active_chip = self.chip_all
+        self.chip_all.setChecked(True)
 
     def _build_ui(self):
         self.stack = QStackedWidget()
@@ -271,4 +284,16 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         curr.setParent(None)
         curr.hide()
         curr.deleteLater()
+        self._reset_to_defaults()              
+
         QTimer.singleShot(0, self.refresh)
+        
+    def _ensure_list_view(self):
+        if self.stack.currentIndex() != 0:
+            for i in range(self.stack.count() - 1, 0, -1):
+                widget = self.stack.widget(i)
+                self.stack.removeWidget(widget)
+                widget.setParent(None)
+                widget.hide()
+                widget.deleteLater()
+            self.stack.setCurrentIndex(0)

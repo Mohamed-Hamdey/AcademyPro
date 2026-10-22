@@ -65,11 +65,12 @@ class DashboardScreen(ThemedWidget, QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # Always reset to the Daily tab (index 0) when returning to the dashboard
+        if hasattr(self, "tabs"):
+            self.tabs.setCurrentIndex(0)
+        
         if not self._loaded:
             self._loaded = True
-            # Defer the heavy queries + chart rebuild until the window frame
-            # is fully painted. Without this, Windows draws a white frame
-            # for ~100-300ms while `refresh()` blocks the event loop.
             QTimer.singleShot(0, self._initial_load)
 
     def _initial_load(self):

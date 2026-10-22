@@ -13,10 +13,18 @@ from repositories import activities_repo
 from repositories.activities_repo import Activity
 from ui import i18n
 
+_ACTIVITIES_CACHE = {"data": None}
 
 def list_active() -> list[Activity]:
-    return activities_repo.list_all(include_inactive=False)
+    if _ACTIVITIES_CACHE["data"] is not None:
+        return _ACTIVITIES_CACHE["data"]
+    data = activities_repo.list_all(include_inactive=False)
+    _ACTIVITIES_CACHE["data"] = data
+    return data
 
+
+def _invalidate_cache():
+    _ACTIVITIES_CACHE["data"] = None
 
 def list_all() -> list[Activity]:
     return activities_repo.list_all(include_inactive=True)
@@ -35,7 +43,8 @@ def get_localized_name(activity) -> str:
 def create(name: str, default_days: list, color: str = None, requires_belt: bool = True, requires_weight: bool = True) -> int:
     """Create a new activity."""
     # (Keep whatever validation you have here, e.g., name_exists)
-    
+    _invalidate_cache()
+
     # Pass the new parameters to the repo
     return activities_repo.create(
         name=name, 
@@ -44,7 +53,6 @@ def create(name: str, default_days: list, color: str = None, requires_belt: bool
         requires_belt=requires_belt, 
         requires_weight=requires_weight
     )
-
 def update(activity_id: int, name: str, default_days: list, color: str = None, requires_belt: bool = True, requires_weight: bool = True) -> None:
     """Update an existing activity."""
     # (Keep whatever validation you have here)
@@ -57,7 +65,7 @@ def update(activity_id: int, name: str, default_days: list, color: str = None, r
         requires_belt=requires_belt, 
         requires_weight=requires_weight
     )
-
+    _invalidate_cache()
 def deactivate(activity_id: int) -> None:
     activities_repo.set_active(activity_id, False)
     try:
@@ -65,6 +73,8 @@ def deactivate(activity_id: int) -> None:
         audit_service.record("activity.archive", target_type="activity", target_id=activity_id)
     except Exception:
         pass
+    _invalidate_cache()
+
 
 
 def reactivate(activity_id: int) -> None:
@@ -74,6 +84,7 @@ def reactivate(activity_id: int) -> None:
         audit_service.record("activity.restore", target_type="activity", target_id=activity_id)
     except Exception:
         pass
+    _invalidate_cache()
 
 
 def count_references(activity_id: int) -> int:
@@ -95,7 +106,8 @@ def delete(activity_id: int) -> None:
         audit_service.record("activity.delete", target_type="activity", target_id=activity_id)
     except Exception:
         pass
-    
+    _invalidate_cache()
+
     
 def get_weekly_attendance(activity_id: int, weeks: int = 8) -> list[dict]:
     """

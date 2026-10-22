@@ -1133,7 +1133,16 @@
 
 "dash.payments.method.currency": "Currency",
 "dash.payments.method.visa": "Visa",
-"dash.payments.method.check": "Check"
+"dash.payments.method.check": "Check",
+"dash.payments.count_label": "payments",
+"dash.payments.col.player": "Player",
+"dash.payments.col.date": "Date",
+"dash.payments.no_preference": "Custom / No Preference",
+"dash.month.paid_by_time": "Payments by Session Time",
+"dash.month.no_payments": "No payments recorded this month.",
+"players.measurement.history_title": "سجل الوزن والأحزمة",
+"players.measurement.history_title_weight": "سجل الوزن",
+"players.measurement.history_title_belt": "سجل الأحزمة"
 
 
 }

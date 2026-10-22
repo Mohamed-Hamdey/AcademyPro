@@ -46,6 +46,8 @@ class MainWindow(QMainWindow):
         self._restore_geometry()
 
         self._pages_by_nav_key = {}
+        self._page_factories = {}      # <-- ADD
+        self._page_title_keys = {}     # <-- AD
         self._nav_keys_in_order = []
 
         self._build_ui()
@@ -73,14 +75,14 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.workspace = Workspace()
 
-        self._register_page("nav.check_in",       "checkin.title",   ScanScreen(self),        "checkin")
-        self._register_page("nav.manage_players", "players.title",   PlayerListScreen(self),  "players.view")
-        self._register_page("nav.dashboard",      "dash.title",      DashboardScreen(self),   "financials.view")
-        self._register_page("nav.activities", "activities.title", ActivitiesScreen(self), "activities.manage")
-        self._register_page("nav.users",          "users.title",   UsersScreen(self),     "users.manage")
-        self._register_page("nav.expenses", "expenses.title", ExpensesScreen(self), "expenses.manage")
-        self._register_page("nav.championships", "champ.title", ChampionshipsScreen(self), "championships.manage")
-        self._register_page("nav.audit",          "audit.title",   AuditScreen(self),     "audit.view")
+        self._register_page("nav.check_in",       "checkin.title",   lambda: ScanScreen(self),        "checkin")
+        self._register_page("nav.manage_players", "players.title",   lambda: PlayerListScreen(self),  "players.view")
+        self._register_page("nav.dashboard",      "dash.title",      lambda: DashboardScreen(self),   "financials.view")
+        self._register_page("nav.activities",     "activities.title", lambda: ActivitiesScreen(self),  "activities.manage")
+        self._register_page("nav.users",          "users.title",     lambda: UsersScreen(self),       "users.manage")
+        self._register_page("nav.expenses",       "expenses.title",  lambda: ExpensesScreen(self),    "expenses.manage")
+        self._register_page("nav.championships",  "champ.title",     lambda: ChampionshipsScreen(self), "championships.manage")
+        self._register_page("nav.audit",          "audit.title",     lambda: AuditScreen(self),       "audit.view")
 
         
         # Register Recycle Bin without adding to main sidebar
@@ -116,11 +118,14 @@ class MainWindow(QMainWindow):
                 pass
         threading.Thread(target=_warm, daemon=True).start()
 
-    def _register_page(self, nav_key: str, title_key: str, page: QWidget,
+    def _register_page(self, nav_key: str, title_key: str, page_factory,
                        permission: str, hide_from_sidebar: bool = False):
+        """
+        Register a screen lazily. `page_factory` is a callable that builds
+        the screen widget on first access. If the user lacks permission,
+        the factory is never called, saving construction cost.
+        """
         if permission is not None and not app_state.can(permission):
-            page.setParent(None)
-            page.deleteLater()
             return
 
         if not hide_from_sidebar:
@@ -129,13 +134,27 @@ class MainWindow(QMainWindow):
                 nav_key, glyph, required_permission=permission
             )
             if sidebar_index < 0:
-                page.setParent(None)
-                page.deleteLater()
                 return
 
-        self.workspace.add_page(nav_key, t(title_key), page)
-        self._pages_by_nav_key[nav_key] = page
+        # Store the factory — screen is not built yet.
+        self._page_factories[nav_key] = page_factory
+        self._page_title_keys[nav_key] = title_key
         self._nav_keys_in_order.append(nav_key)
+
+    def _ensure_page(self, nav_key: str) -> QWidget:
+        """Build the screen on first access; reuse thereafter."""
+        if nav_key in self._pages_by_nav_key:
+            return self._pages_by_nav_key[nav_key]
+
+        factory = self._page_factories.get(nav_key)
+        if factory is None:
+            return None
+
+        page = factory()
+        title = t(self._page_title_keys.get(nav_key, ""))
+        self.workspace.add_page(nav_key, title, page)
+        self._pages_by_nav_key[nav_key] = page
+        return page
 
     @staticmethod
     def _glyph_for(nav_key: str) -> str:
@@ -166,6 +185,7 @@ class MainWindow(QMainWindow):
         self.sidebar.footer_list.blockSignals(False)
 
         nav_key = self._nav_keys_in_order[index]
+        self._ensure_page(nav_key)
         self.workspace.set_header_action(None)
         self.workspace.show_page_by_key(nav_key)
 
@@ -177,7 +197,7 @@ class MainWindow(QMainWindow):
         self.sidebar.nav_list.blockSignals(True)
         self.sidebar.nav_list.setCurrentRow(-1)
         self.sidebar.nav_list.blockSignals(False)
-
+        self._ensure_page("nav.recycle_bin")
         self.workspace.set_header_action(None)
         self.workspace.show_page_by_key("nav.recycle_bin")
         self.workspace.set_title(t("recycle.title"))

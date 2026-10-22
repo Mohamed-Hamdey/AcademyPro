@@ -572,3 +572,14 @@ def get_measurements(player_id: int) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+        
+def count_active() -> int:
+    """Fast count of non-archived players. One query, no joins."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM players WHERE archived_at IS NULL"
+        ).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        conn.close()

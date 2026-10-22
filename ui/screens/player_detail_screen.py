@@ -256,6 +256,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         # ===== Measurement History (Weight & Belt Graph) =====
         self.measurement_card = SectionCard(title=t("players.measurement.history_title"))
+        self.measurement_card.setObjectName("measurementCard")
         
         # Chart widget
         self.weight_chart = LineChartWidget()
@@ -404,22 +405,47 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.player_card.display_player(
             player, most_recent, check_in_state=None, display=display,
         )
-        
-        # Load measurement history
-        measurements = players_repo.get_measurements(self.player_id)
-        
-        # The chart expects 'weight', but the DB column is 'weight_kg'
-        # We map it here so the chart widget doesn't need to know the DB schema.
-        chart_data = []
-        for m in measurements:
-            chart_data.append({
-                "date": m["recorded_at"],
-                "weight": m["weight_kg"],
-                "belt": m["belt"]
-            })
-        self.weight_chart.set_data(chart_data)
-        self._render_sub_table()
 
+        # --- Calculate measurement requirements ---
+        requires_belt = False
+        requires_weight = False
+        for sub in self._active_subs:
+            if sub.activity_id:
+                act = activity_service.get(sub.activity_id)
+                if act:
+                    if act.requires_belt:
+                        requires_belt = True
+                    if act.requires_weight:
+                        requires_weight = True
+
+        self._requires_belt = requires_belt
+        self._requires_weight = requires_weight
+
+        # --- Show / hide measurement card (do this BEFORE loading the chart) ---
+        if not requires_belt and not requires_weight:
+            self.measurement_card.hide()
+        else:
+            self.measurement_card.show()
+            if requires_belt and requires_weight:
+                self.measurement_card.set_title(t("players.measurement.history_title"))
+            elif requires_weight:
+                self.measurement_card.set_title(t("players.measurement.history_title_weight"))
+            elif requires_belt:
+                self.measurement_card.set_title(t("players.measurement.history_title_belt"))
+
+            # Load measurement history (only if we're going to display it)
+            measurements = players_repo.get_measurements(self.player_id)
+            chart_data = []
+            for m in measurements:
+                chart_data.append({
+                    "date": m["recorded_at"],
+                    "weight": m["weight_kg"],
+                    "belt": m["belt"]
+                })
+            self.weight_chart.set_data(chart_data)
+
+        # --- Rest of the refresh ---
+        self._render_sub_table()
         self.notes_input.setPlainText(player.notes or "")
         self._load_attendance()
         if hasattr(self, "records_tab"):
@@ -656,23 +682,29 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             QTimer.singleShot(0, self.refresh)
 
     def _on_record_measurement(self):
-        # Pass the current weight and belt as defaults to the dialog
+        from ui.dialogs.record_measurement_dialog import RecordMeasurementDialog
+        
         current_weight = self.current_player.weight_kg or 0.0
         current_belt = self.current_player.belt or "white"
         
-        dlg = RecordMeasurementDialog(current_weight, current_belt, parent=self)
+        dlg = RecordMeasurementDialog(
+            current_weight, 
+            current_belt, 
+            requires_belt=self._requires_belt,
+            requires_weight=self._requires_weight,
+            parent=self
+        )
         if dlg.exec():
             weight, belt, notes = dlg.get_values()
             
-            # Save to DB (this also updates the player's current profile)
+            from services import player_service
             player_service.record_measurement(
                 self.player_id, 
                 weight_kg=weight, 
                 belt=belt, 
                 notes=notes
             )
-            
-            # Refresh the screen to update the chart and player card
+            from qtpy.QtCore import QTimer
             QTimer.singleShot(0, self.refresh)
 
 

@@ -81,8 +81,11 @@ class AuditScreen(ThemedWidget, QWidget):
             # Populate the filter dropdowns (actions + users) BEFORE
             # querying — otherwise they render empty on first open.
             self.reload_filter_options()
+            self._clear_filters()
             QTimer.singleShot(0, self.refresh)
-            self._update_reset_visibility()   # <-- add this
+            self._update_reset_visibility()  
+               # <-- NEW: reset all filters before refresh
+# <-- add this
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -132,12 +135,14 @@ class AuditScreen(ThemedWidget, QWidget):
         self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy-MM-dd")
         self.date_from.setDate(QDate.currentDate().addDays(-30))
+        self.date_from.setFixedWidth(150)
         self.date_from.dateChanged.connect(self._on_filter_changed)
 
         self.date_to = QDateEdit()
         self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy-MM-dd")
         self.date_to.setDate(QDate.currentDate())
+        self.date_to.setFixedWidth(150)
         self.date_to.dateChanged.connect(self._on_filter_changed)
 
         self.reset_btn = QPushButton("↺  " + t("audit.clear_filters"))

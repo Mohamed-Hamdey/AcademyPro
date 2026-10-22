@@ -30,6 +30,8 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         super().showEvent(event)
         if self._dirty:
             self._dirty = False
+            self._reset_to_defaults()
+
             QTimer.singleShot(0, self.refresh)
 
     def hideEvent(self, event):
@@ -326,6 +328,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         if aid is not None:
             from repositories import activities_repo
             activities_repo.restore(aid)
+            activity_service._invalidate_cache()
             QTimer.singleShot(0, self.refresh)
 
 
@@ -430,6 +433,10 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             self.players_table.setItem(i, 1, id_item)
             self.players_table.setItem(i, 2, QTableWidgetItem(p.archived_at or "—"))
 
+    def _reset_to_defaults(self):
+        """Reset the tab widget back to the first tab."""
+        self.tabs.setCurrentIndex(0)
+        
     def _render_subs(self, subs):
         self.subs_table.setRowCount(len(subs))
         if not subs:

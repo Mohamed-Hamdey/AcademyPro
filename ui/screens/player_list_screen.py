@@ -157,6 +157,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._ensure_list_view()
         if not self._loaded:
             self._loaded = True
             # Defer the heavy rendering until the window has fully drawn
@@ -165,6 +166,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
     def _initial_load(self):
         try:
             self._reload_activity_tabs()  # <--- FIX: Restore the activity tabs on load
+            self._reset_to_defaults()
             QTimer.singleShot(0, self.refresh)
         except Exception:
             self._loaded = False
@@ -397,8 +399,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
         counts = players_repo.list_activity_counts()
         activities = activity_service.list_active()
-        all_count = len(players_repo.list_with_details())
-
+        all_count = players_repo.count_active()
         self._add_tab_button(None, t("players.tab.all"), all_count, primary=True)
 
         for act in activities:
@@ -527,6 +528,27 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self._update_reset_visibility()
         QTimer.singleShot(0, self.refresh)
 
+
+    def _reset_to_defaults(self):
+        """Reset filters and clear the selected activity tab."""
+        # Reset all filter widgets without firing signals
+        for w in (self.search_input, self.plan_filter, self.status_filter, self.time_filter):
+            w.blockSignals(True)
+        try:
+            self.search_input.clear()
+            self.plan_filter.setCurrentIndex(0)
+            self.status_filter.setCurrentIndex(0)
+            self.time_filter.setCurrentIndex(0)
+            self._custom_sessions = None
+
+            # Reset the activity tab to "All"
+            if self._tab_buttons:
+                for btn, act_id in self._tab_buttons:
+                    btn.setChecked(act_id is None)
+                self._current_activity_id = None
+        finally:
+            for w in (self.search_input, self.plan_filter, self.status_filter, self.time_filter):
+                w.blockSignals(False)
     # ---------- data load ----------
 
     def refresh(self):
@@ -892,4 +914,22 @@ class PlayerListScreen(ThemedWidget, QWidget):
         current.deleteLater()
         self._loaded = False
         self._reload_activity_tabs()
+        self._reset_to_defaults()
         QTimer.singleShot(0, self.refresh)
+        
+    def _ensure_list_view(self):
+        """
+        If a detail screen is currently shown in the stack, destroy it and
+        return to the list view. This ensures that whenever the user
+        navigates back to the Players screen (via the sidebar), they always
+        see the Player List, not a leftover Player Detail screen.
+        """
+        if self.stack.currentIndex() != 0:
+            # Remove all widgets after index 0 (the list view)
+            for i in range(self.stack.count() - 1, 0, -1):
+                widget = self.stack.widget(i)
+                self.stack.removeWidget(widget)
+                widget.setParent(None)
+                widget.hide()
+                widget.deleteLater()
+            self.stack.setCurrentIndex(0)

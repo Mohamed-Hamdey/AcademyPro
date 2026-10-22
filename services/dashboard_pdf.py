@@ -40,7 +40,8 @@ def print_day(parent_widget, day: date):
 
 def print_month(parent_widget, year: int, month: int):
     summary = dashboard_service.month_summary(year, month)
-    html = _build_month_html(year, month, summary)
+    payments_by_time = dashboard_service.get_monthly_payments_grouped_by_time(year, month)
+    html = _build_month_html(year, month, summary, payments_by_time)
     _print_html(parent_widget, html, t("dash.print_dialog.month_title"))
 
 
@@ -253,7 +254,7 @@ def _build_day_html(day: date, s: dict) -> str:
 # Month report
 # ---------------------------------------------------------------------------
 
-def _build_month_html(year: int, month: int, s: dict) -> str:
+def _build_month_html(year: int, month: int, s: dict, payments_by_time: dict) -> str:
     parts = [_common_style(), _header_block()]
 
     month_label = f"{t(MONTH_KEYS[month-1])} {year}"
@@ -336,9 +337,60 @@ def _build_month_html(year: int, month: int, s: dict) -> str:
                 f'</tr>'
             )
         parts.append('</table>')
+    
+        # Payments by Session Time (grouped list)
+    parts.append(f'<h2>{t("dash.month.paid_by_time")}</h2>')
+    
+    if not payments_by_time:
+        parts.append(f'<p class="muted">{t("dash.month.no_payments")}</p>')
+    else:
+        for time_key, data in payments_by_time.items():
+            # Determine the label
+            if time_key == "custom":
+                time_label = t("dash.payments.no_preference")
+            else:
+                time_label = data["label"]
+            
+            # Group header with total
+            parts.append(
+                f'<div style="margin-top: 14px; padding: 6px 10px; '
+                f'background: #E0E7FF; border-radius: 4px; '
+                f'border-left: 4px solid #2563EB;">'
+                f'<b style="color: #1E40AF; font-size: 11pt;">{_esc(time_label)}</b>'
+                f'<span class="muted small" style="float: {("left" if i18n.current_language() == "ar" else "right")};">'
+                f'{data["count"]} {t("dash.payments.count_label")} · '
+                f'<b>{data["total"]:,.0f} EGP</b>'
+                f'</span>'
+                f'</div>'
+            )
+            
+            # Table of players who paid in this time slot
+            parts.append('<table style="margin-top: 6px;">')
+            parts.append(
+                f'<tr style="border-bottom: 2px solid #DCE3EC;">'
+                f'<td><b>{t("dash.payments.col.player")}</b></td>'
+                f'<td><b>{t("dash.payments.col.date")}</b></td>'
+                f'<td><b>{t("dash.payments.col.method")}</b></td>'
+                f'<td style="text-align: right;"><b>{t("dash.payments.col.amount")}</b></td>'
+                f'</tr>'
+            )
+            
+            for row in data["rows"]:
+                method_label = t(f"dash.payments.method.{row['method']}") if row.get("method") else "—"
+                parts.append(
+                    f'<tr class="row-item">'
+                    f'<td>{_esc(row["full_name"])}</td>'
+                    f'<td class="muted small">{_esc(row["payment_date"])}</td>'
+                    f'<td class="muted small">{_esc(method_label)}</td>'
+                    f'<td style="text-align: right;"><b>{row["amount"]:,.0f} EGP</b></td>'
+                    f'</tr>'
+                )
+            parts.append('</table>')
 
     parts.append(_footer_block())
     return "".join(parts)
+
+
 
 
 # ---------------------------------------------------------------------------
