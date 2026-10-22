@@ -564,3 +564,69 @@ def payments_for_day_detailed(d: date,
         return [dict(r) for r in rows]
     finally:
         conn.close()
+        
+        
+def get_monthly_payments_grouped_by_time(year: int, month: int) -> dict:
+    """
+    Returns payments for the given month, grouped by the player's session_time.
+    """
+    import calendar
+    from datetime import date
+    from config.config_loader import load_config, get_group_label
+    
+    first_day = date(year, month, 1).isoformat()
+    last_day = date(year, month, calendar.monthrange(year, month)[1]).isoformat()
+    
+    conn = get_connection()
+    try:
+        # Fetch payments + player session_time
+        rows = conn.execute(
+            """
+            SELECT p.payment_id, p.amount, p.payment_date, p.method,
+                   pl.full_name, pl.session_time,
+                   act.name AS activity_name
+            FROM payments p
+            JOIN players pl ON pl.player_id = p.player_id
+            LEFT JOIN subscriptions s ON s.subscription_id = p.subscription_id
+            LEFT JOIN activities act ON act.activity_id = s.activity_id
+            WHERE p.payment_date >= ? AND p.payment_date <= ?
+            ORDER BY p.payment_date DESC
+            """,
+            (first_day, last_day)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # 1. Setup the buckets based on the config
+    cfg = load_config()
+    session_times = cfg.get("session_times", {})
+    
+    result = {}
+    
+    # Create a bucket for each preset (e.g., "18:00", "19:30", "21:00")
+    for t_key, t_info in session_times.items():
+        # t_info might be {"label": "6:00 PM", "label_ar": "..."}
+        # We'll use the label from the config, or fallback to the key
+        label = t_info.get("label", t_key)
+        result[t_key] = {"label": label, "total": 0.0, "count": 0, "rows": []}
+    
+    # Create a fallback bucket for NULL or custom times
+    result["custom"] = {"label": "Custom / No Preference", "total": 0.0, "count": 0, "rows": []}
+
+    # 2. Distribute the payments into the buckets
+    for r in rows:
+        t = r["session_time"]
+        
+        if t in result:
+            # It matches a preset exactly (e.g. "18:00")
+            result[t]["total"] += float(r["amount"])
+            result[t]["count"] += 1
+            result[t]["rows"].append(dict(r))
+        else:
+            # It's NULL, empty, or a custom string (e.g. "18:30")
+            result["custom"]["total"] += float(r["amount"])
+            result["custom"]["count"] += 1
+            result["custom"]["rows"].append(dict(r))
+
+    # 3. Return only the non-empty buckets, but keep the order
+    return {k: v for k, v in result.items() if v["count"] > 0}

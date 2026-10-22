@@ -10,7 +10,7 @@ from services import dashboard_service, activity_service, dashboard_pdf
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QScrollArea, QFrame, QTabWidget, QDateEdit, QTableWidget,
-    QTableWidgetItem, QHeaderView, QLineEdit,
+    QTableWidgetItem, QHeaderView, QLineEdit,QLabel, QFrame
 )
 from qtpy.QtCore import Qt, QDate, QTimer
 from qtpy.QtGui import QColor
@@ -20,6 +20,8 @@ from services import dashboard_service, activity_service
 from ui.components import (
     SectionCard, KpiCard, Toolbar, BarList, ComboBarChart, EmptyState,
 )
+
+from ui.components import EmptyState
 from ui.theme import theme, ThemedWidget, make_secondary
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
@@ -385,6 +387,26 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.m_by_method_bars = BarList()
         self.m_by_method_card.body.addWidget(self.m_by_method_bars)
         body.addWidget(self.m_by_method_card)
+
+        # ---- NEW: Paid Players grouped by Session Time ----
+        self.m_paid_players_card = SectionCard(title=t("dash.month.paid_by_time"))
+        self.m_paid_players_layout = QVBoxLayout()
+        self.m_paid_players_layout.setSpacing(SPACING["md"])
+        self.m_paid_players_card.body.addLayout(self.m_paid_players_layout)
+        
+        self.m_paid_players_empty = EmptyState(
+            icon="💳", 
+            message=t("dash.month.no_payments")
+        )
+        self.m_paid_players_empty.hide()
+        self.m_paid_players_card.body.addWidget(self.m_paid_players_empty)
+        
+        body.addWidget(self.m_paid_players_card)
+        # --------------------------------------------------
+
+        body.addStretch()
+        scroll.setWidget(content)
+        root.addWidget(scroll, stretch=1)
 
         body.addStretch()
         scroll.setWidget(content)
@@ -799,8 +821,86 @@ class DashboardScreen(ThemedWidget, QWidget):
                 "color": "success",
             })
         self.m_by_method_bars.set_data(method_rows)
+        # NEW: Render the Paid Players list
+        self._render_paid_players_by_time()
 
     # ---------- helpers ----------
+
+    def _render_paid_players_by_time(self):
+
+
+        y, m = self._month_options[self.month_selector.currentIndex()]
+        grouped = dashboard_service.get_monthly_payments_grouped_by_time(y, m)
+        
+        # Clear old widgets safely
+        while self.m_paid_players_layout.count():
+            item = self.m_paid_players_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+        
+        # NEW: Show empty state if no payments
+        if not grouped:
+            self.m_paid_players_empty.show()
+            return
+        else:
+            self.m_paid_players_empty.hide()
+
+        self.m_paid_players_card.show()
+        tm = theme()
+
+        # Build a section for each session time
+        for time_key, data in grouped.items():
+            # Header: Time Label + Total
+            header = QWidget()
+            h_layout = QHBoxLayout(header)
+            h_layout.setContentsMargins(0, SPACING["sm"], 0, 0)
+            
+            lbl_time = QLabel(data["label"] if time_key != "custom" else t("dash.payments.no_preference"))
+            lbl_time.setStyleSheet(f"font-size: 14px; font-weight: 700; color: {tm.color('text')};")
+            
+            lbl_total = QLabel(t("dash.payments.total", count=data["count"], amount=f"{data['total']:,.0f}"))
+            lbl_total.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {tm.color('primary')};")
+            
+            h_layout.addWidget(lbl_time)
+            h_layout.addStretch()
+            h_layout.addWidget(lbl_total)
+            self.m_paid_players_layout.addWidget(header)
+
+            # The table for this group
+            table = make_standard_table(
+                headers=[
+                    t("dash.payments.col.player"),
+                    t("dash.payments.col.amount"),
+                    t("dash.payments.col.method"),
+                    t("dash.payments.col.date"),
+                ],
+                column_modes=["stretch", "resize", "resize", "resize"],
+                parent=self,
+            )
+            table.setFixedHeight(min(35 + (len(data["rows"]) * 36), 200)) # Cap height at ~200px
+            
+            table.setRowCount(len(data["rows"]))
+            for i, row in enumerate(data["rows"]):
+                table.setItem(i, 0, QTableWidgetItem(row["full_name"]))
+                
+                amt_item = QTableWidgetItem(f"{row['amount']:,.0f} EGP")
+                amt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                amt_item.setForeground(QColor(tm.color("success")))
+                table.setItem(i, 1, amt_item)
+                
+                table.setItem(i, 2, QTableWidgetItem(t(f"dash.payments.method.{row['method']}")))
+                table.setItem(i, 3, QTableWidgetItem(row["payment_date"]))
+                
+            self.m_paid_players_layout.addWidget(table)
+            
+            # Add a divider between groups
+            divider = QFrame()
+            divider.setFixedHeight(1)
+            divider.setStyleSheet(f"background-color: {tm.color('divider')}; margin: 8px 0;")
+            self.m_paid_players_layout.addWidget(divider)
 
     def _activity_display_name(self, row: dict) -> str:
         if i18n.current_language() == "ar":

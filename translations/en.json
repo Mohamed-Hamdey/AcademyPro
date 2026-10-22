@@ -1122,9 +1122,18 @@
 "activities.filter.active": "Active",
 "activities.filter.archived": "Archived",
 "players.measurement.notes": "Notes (Optional)",
+"dash.month.paid_by_time": "Payments by Session Time",
+"dash.month.no_payments": "No payments recorded this month.",
+"dash.payments.col.player": "Player",
+"dash.payments.col.date": "Date",
 "players.measurement.notes_placeholder": "e.g. After competition",
 "players.measurement.record_btn": "Record Measurement",
-"players.measurement.history_title": "Weight & Belt History"
+"players.measurement.history_title": "Weight & Belt History",
+"dash.payments.no_preference": "Custom / No Preference",
+
+"dash.payments.method.currency": "Currency",
+"dash.payments.method.visa": "Visa",
+"dash.payments.method.check": "Check"
 
 
 }

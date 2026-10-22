@@ -1121,12 +1121,21 @@
 "activities.period.last_30_days": "آخر 30 يوم",
 "activities.period.last_3_months": "آخر 3 أشهر",
 "activities.period.this_year": "هذا العام",
+"dash.month.paid_by_time": "المدفوعات حسب وقت الحصة",
+"dash.month.no_payments": "لا توجد مدفوعات مسجلة هذا الشهر.",
+"dash.payments.col.player": "اللاعب",
+"dash.payments.col.date": "التاريخ",
 "activities.detail.no_revenue": "لا توجد إيرادات في هذه الفترة.",
 "activities.detail.no_attendance": "لا يوجد حضور في هذه الفترة.",
 "players.measurement.notes": "ملاحظات (اختياري)",
 "players.measurement.notes_placeholder": "مثال: بعد المسابقة",
 "players.measurement.record_btn": "تسجيل قياس",
-"players.measurement.history_title": "سجل الوزن والأحزمة"
+"players.measurement.history_title": "سجل الوزن والأحزمة",
+"dash.payments.no_preference": "وقت مخصص",
+
+"dash.payments.method.currency": "عملة",
+"dash.payments.method.visa": "فيزا",
+"dash.payments.method.check": "شيك"
 
 
 
