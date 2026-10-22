@@ -15,7 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from services import activity_service
 from ui.table_helpers import make_standard_table
 from ui.components import SectionCard, KpiCard, ComboBarChart, EmptyState, Pill
-from ui.theme import theme, ThemedWidget, make_secondary, make_segment
+from ui.theme import make_warning, theme, ThemedWidget, make_secondary, make_segment, make_danger
 from ui.design import SPACING
 from ui.i18n import t
 from ui.message_box import info, warn, ask
@@ -85,6 +85,18 @@ class ActivityDetailScreen(ThemedWidget, QWidget):
         make_secondary(self.edit_btn)
         self.edit_btn.clicked.connect(self._on_edit)
         header.addWidget(self.edit_btn)
+        
+        # --- NEW: Deactivate and Delete buttons ---
+        self.toggle_btn = QPushButton(t("activities.action.deactivate"))
+        make_warning(self.toggle_btn)
+        self.toggle_btn.clicked.connect(self._on_toggle_active)
+        header.addWidget(self.toggle_btn)
+
+        self.delete_btn = QPushButton(t("activities.action.delete"))
+        make_danger(self.delete_btn)
+        self.delete_btn.clicked.connect(self._on_delete)
+        header.addWidget(self.delete_btn)
+        # -----------------------------------------
 
         self.back_btn = QPushButton(t("activities.detail.back"))
         self.back_btn.clicked.connect(self._on_back)
@@ -236,14 +248,20 @@ class ActivityDetailScreen(ThemedWidget, QWidget):
         act = activity_service.get(self.activity_id)
         if not act:
             return
+    
+        self.current_activity = act 
 
         # 1. Update Header
         self.title_label.setText(act.name)
         
         if act.active:
             self.status_pill.set_status(t("activities.status.active"), "success")
+            self.toggle_btn.setText(t("activities.action.deactivate")) # <--- ADD THIS
+            make_warning(self.toggle_btn)                              # <--- ADD THIS
         else:
             self.status_pill.set_status(t("activities.status.inactive"), "warning")
+            self.toggle_btn.setText(t("activities.action.reactivate")) # <--- ADD THIS
+            make_warning(self.toggle_btn)                              # <--- ADD THIS
         self.status_pill.show()
 
         days_str = ", ".join(t(f"weekday.{d.lower()}") for d in act.default_days)
@@ -366,3 +384,38 @@ class ActivityDetailScreen(ThemedWidget, QWidget):
         dlg = ActivityFormDialog(activity=act, parent=self)
         if dlg.exec():
             QTimer.singleShot(0, self.refresh)
+            
+            
+    def _on_toggle_active(self):
+        act = activity_service.get(self.activity_id)
+        if not act:
+            return
+
+        if act.active:
+            refs = activity_service.count_references(self.activity_id)
+            msg_key = "activities.confirm.deactivate_with_refs" if refs > 0 else "activities.confirm.deactivate"
+            if not ask(self, t("activities.confirm.title"), t(msg_key, name=act.name, count=refs)):
+                return
+            activity_service.deactivate(self.activity_id)
+        else:
+            activity_service.reactivate(self.activity_id)
+
+        QTimer.singleShot(0, self.refresh)
+
+    def _on_delete(self):
+        act = activity_service.get(self.activity_id)
+        if not act:
+            return
+        if not ask(self, t("activities.confirm.delete_title"), t("activities.confirm.delete_msg", name=act.name)):
+            return
+        
+        try:
+            from repositories import activities_repo
+            activities_repo.archive(self.activity_id)
+        except Exception as e:
+            warn(self, t("activities.confirm.title"), str(e))
+            return
+            
+        # Instead of refreshing, go back to the list because the activity is archived
+        if self.on_back:
+            self.on_back()
