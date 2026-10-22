@@ -217,8 +217,10 @@ class ActivityFormDialog(ThemedWidget, QDialog):
             cb = self.day_checkboxes.get(day_key)
             if cb:
                 cb.setChecked(True)
-        self.requires_belt_cb.setChecked(bool(activity["requires_belt"]))
-        self.requires_weight_cb.setChecked(bool(activity["requires_weight"]))
+        
+        # FIX: Use dot notation, not dictionary brackets
+        self.requires_belt_cb.setChecked(bool(activity.requires_belt))
+        self.requires_weight_cb.setChecked(bool(activity.requires_weight))
         self._update_color_preview()
 
     # ---------- color ----------

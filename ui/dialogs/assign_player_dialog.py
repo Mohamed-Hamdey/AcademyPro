@@ -1,41 +1,14 @@
 """
-Assign Players Dialog — v5.
+Assign Players Dialog — v6 (Read-only Belt/Weight).
 
-Fixes and changes from the previous version:
-
-  BUGS
-  * Save never worked: cellWidget(i, 2/3) returns the *container* QWidget, not
-    the QComboBox / QDoubleSpinBox inside it, so `.currentData()` raised
-    AttributeError (shown as an error banner). Selection, belt and weight now
-    live in a per-player state dict that the row widgets write into.
-  * "Default belt" / "Default weight" did nothing. They now fill players that
-    have no stored belt/weight, and follow changes until you edit that row.
-  * Searching rebuilt the table and silently threw away checked rows and edited
-    belts/weights. State now survives searching; the Assign (N) count covers
-    every selected player, visible or not.
-  * Pressing Enter in the search box triggered the default Assign button,
-    which also records payments. The buttons are no longer default buttons.
-  * A failure half-way through registering left earlier players registered but
-    still selectable, so a retry would register (and charge) them twice. Each
-    success is now recorded immediately; the table reloads to show them as
-    "already assigned".
-  * Removed dead code: an unused header checkbox + widget, never added to any
-    layout.
-
-  UX
-  * Click anywhere on a row to tick/untick it. Checked rows are highlighted.
-  * One "Select all" checkbox that follows the rows (acts on visible,
-    unassigned rows; unticks itself when you untick a row).
-  * Players who are not yet assigned are listed first; assigned ones last.
-  * Header text aligned with the data; weight suffix comes from the same
-    translation key as the footer spin box (was a hard-coded " kg").
-  * Same v5 look as the other dialogs: header, divider, themed error banner.
-  * No new translation keys.
+Belt and weight are pulled directly from the player's profile. The dialog
+simply lists eligible players with their current stats and lets you check
+the ones you want to assign.
 """
+
 from qtpy.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QComboBox, QDoubleSpinBox,
-    QLineEdit, QPushButton, QLabel, QTableWidgetItem, QCheckBox,
-    QWidget, QTableWidget, QSizePolicy,
+    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QLabel,
+    QTableWidgetItem, QCheckBox, QWidget, QTableWidget, QSizePolicy,
 )
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor, QBrush
@@ -50,30 +23,31 @@ from ui.utils import Debouncer
 from ui.form_helpers import hex_, make_divider, style_divider
 
 
-_BELTS = ("white", "yellow", "orange", "green", "blue", "brown", "black")
-_DEFAULT_WEIGHT = 60.0
-
-
 class AssignPlayerDialog(ThemedWidget, QDialog):
     def __init__(self, championship_id, existing_player_ids, parent=None):
         QDialog.__init__(self, parent)
-        self.championship_id = championship_id
-        self.existing_ids = set(existing_player_ids)
-        self.champ = championships_repo.get_championship(self.championship_id)
+        
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.setUpdatesEnabled(False)
+        
+        try:
+            self.championship_id = championship_id
+            self.existing_ids = set(existing_player_ids)
+            self.champ = championships_repo.get_championship(self.championship_id)
 
-        # player_id -> {"checked", "belt", "weight", "belt_dirty", "weight_dirty",
-        #               "belt_stored", "weight_stored", "name"}
-        self._state = {}
-        # player_id -> {"row", "chk", "belt", "weight"} for the rows on screen
-        self._row_widgets = {}
-        self._visible_ids = []
-        self._registered_any = False
+            self._state = {}  # player_id -> {"checked": bool, "name": str}
+            self._row_widgets = {}  # player_id -> {"row": int, "chk": QCheckBox}
+            self._visible_ids = []
 
-        self.setWindowTitle(t("champ.assign.title"))
-        self.setMinimumSize(760, 560)
-        self._build_ui()
-        self._init_theme()
-        self._reload_players()
+            self.setWindowTitle(t("champ.assign.title"))
+            self.setMinimumSize(760, 560)
+            self._build_ui()
+            self._init_theme()
+            self._reload_players()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+            self.update()
 
     # ------------------------------------------------------------------
     # UI
@@ -84,7 +58,7 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         root.setContentsMargins(SPACING["lg"], SPACING["lg"], SPACING["lg"], SPACING["lg"])
         root.setSpacing(SPACING["md"])
 
-        # ---- Header: badge + title + "championship · activity" ----
+        # Header
         header = QHBoxLayout()
         header.setSpacing(SPACING["lg"])
         header.setContentsMargins(0, 0, 0, 0)
@@ -109,7 +83,7 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         self.divider = make_divider(self, "assignDivider")
         root.addWidget(self.divider)
 
-        # ---- Search ----
+        # Search
         self.search_input = QLineEdit(self)
         self.search_input.setPlaceholderText(t("champ.assign.search"))
         self.search_input.setProperty("cssClass", "search")
@@ -118,7 +92,7 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         self.search_input.returnPressed.connect(self._on_search_enter)
         root.addWidget(self.search_input)
 
-        # ---- Select all (acts on the visible, unassigned rows) ----
+        # Select all
         select_row = QHBoxLayout()
         select_row.setContentsMargins(0, 0, 0, 0)
         self.select_all_check = QCheckBox(t("champ.assign.select_all"), self)
@@ -127,22 +101,20 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         select_row.addStretch()
         root.addLayout(select_row)
 
-        # ---- Table ----
+        # Table
         self.table = make_standard_table(
             headers=["", t("champ.col.player"), t("champ.col.belt"), t("champ.col.weight")],
             column_modes=["fixed", "stretch", "fixed", "fixed"],
             parent=self,
         )
-        self.table.setColumnWidth(0, 56)    # checkbox
-        self.table.setColumnWidth(2, 170)   # belt
-        self.table.setColumnWidth(3, 150)   # weight
-        self.table.verticalHeader().setDefaultSectionSize(54)
+        self.table.setColumnWidth(0, 56)
+        self.table.setColumnWidth(2, 170)
+        self.table.setColumnWidth(3, 150)
+        self.table.verticalHeader().setDefaultSectionSize(46)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Header text aligned like the data: player name at the start edge,
-        # the widget columns centred.
         for col, align in (
             (1, Qt.AlignmentFlag.AlignLeading | Qt.AlignmentFlag.AlignVCenter),
             (2, Qt.AlignmentFlag.AlignCenter),
@@ -154,28 +126,9 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
 
         root.addWidget(self.table, 1)
 
-        # ---- Footer: defaults + actions ----
+        # Footer
         bottom = QHBoxLayout()
         bottom.setSpacing(SPACING["md"])
-
-        bottom.addWidget(QLabel(t("champ.assign.default_belt"), self))
-        self.default_belt = QComboBox(self)
-        for belt_key in _BELTS:
-            self.default_belt.addItem(t(f"belt.{belt_key}"), belt_key)
-        self.default_belt.currentIndexChanged.connect(self._on_default_belt_changed)
-        bottom.addWidget(self.default_belt)
-
-        bottom.addWidget(QLabel(t("champ.assign.default_weight"), self))
-        self.default_weight = QDoubleSpinBox(self)
-        self.default_weight.setMinimum(10)
-        self.default_weight.setMaximum(300)
-        self.default_weight.setDecimals(1)
-        self.default_weight.setValue(_DEFAULT_WEIGHT)
-        self.default_weight.setSuffix(t("champ.assign.weight_suffix"))
-        self.default_weight.setMinimumWidth(120)
-        self.default_weight.valueChanged.connect(self._on_default_weight_changed)
-        bottom.addWidget(self.default_weight)
-
         bottom.addStretch()
 
         cancel_btn = QPushButton(t("msg.cancel"), self)
@@ -184,8 +137,6 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         cancel_btn.clicked.connect(self.reject)
         bottom.addWidget(cancel_btn)
 
-        # Not a default button on purpose: Enter in the search box must never
-        # register players (and record payments).
         self.save_btn = QPushButton(t("champ.assign.btn", n=0), self)
         self.save_btn.setAutoDefault(False)
         self.save_btn.setDefault(False)
@@ -195,7 +146,7 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
 
         root.addLayout(bottom)
 
-        # ---- Error banner ----
+        # Error banner
         self.error_label = QLabel("", self)
         self.error_label.setWordWrap(True)
         self.error_label.hide()
@@ -260,12 +211,12 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         else:
             rows = players_repo.search_with_details(query)
 
-        # Unassigned players first, already-assigned ones last (stable sort).
+        # Unassigned first, already-assigned last
         rows = sorted(rows, key=lambda r: r["player"].player_id in self.existing_ids)
 
         self.table.setUpdatesEnabled(False)
         try:
-            self.table.setRowCount(0)          # also releases the old cell widgets
+            self.table.setRowCount(0)
             self.table.setRowCount(len(rows))
             self._row_widgets = {}
             self._visible_ids = []
@@ -276,43 +227,17 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
 
         self._update_selected_count()
 
-    def _state_for(self, p):
-        st = self._state.get(p.player_id)
-        if st is not None:
-            return st
-
-        stored_belt = getattr(p, "belt", None)
-        stored_weight = getattr(p, "weight_kg", None)
-        try:
-            weight = float(stored_weight) if stored_weight else float(self.default_weight.value())
-        except (TypeError, ValueError):
-            stored_weight = None
-            weight = float(self.default_weight.value())
-
-        st = {
-            "name": p.full_name,
-            "checked": False,
-            "belt": str(stored_belt).lower() if stored_belt else self.default_belt.currentData(),
-            "weight": weight,
-            "belt_stored": bool(stored_belt),
-            "weight_stored": bool(stored_weight),
-            "belt_dirty": False,
-            "weight_dirty": False,
-        }
-        self._state[p.player_id] = st
-        return st
-
     def _build_row(self, i, p):
         pid = p.player_id
         assigned = pid in self.existing_ids
-        st = self._state_for(p)
+        st = self._state.get(pid)
+        if st is None:
+            st = {"checked": False, "name": p.full_name}
+            self._state[pid] = st
+
         viewport = self.table.viewport()
 
-        # Items under the cell widgets, so rows can be highlighted evenly.
-        for col in (0, 2, 3):
-            self.table.setItem(i, col, QTableWidgetItem())
-
-        # ---- 0. checkbox ----
+        # 0. Checkbox
         chk_cell = QWidget(viewport)
         chk_lay = QHBoxLayout(chk_cell)
         chk_lay.setContentsMargins(0, 0, 0, 0)
@@ -324,7 +249,7 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         chk_lay.addWidget(chk)
         self.table.setCellWidget(i, 0, chk_cell)
 
-        # ---- 1. name ----
+        # 1. Name
         name = p.full_name
         if assigned:
             name += f"  ({t('champ.assign.already')})"
@@ -335,55 +260,29 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
             name_item.setForeground(QColor(theme().color("text_secondary")))
         self.table.setItem(i, 1, name_item)
 
-        # ---- 2. belt ----
-        belt_cell = QWidget(viewport)
-        belt_lay = QHBoxLayout(belt_cell)
-        belt_lay.setContentsMargins(8, 3, 8, 3)
-        belt_lay.setSpacing(0)
-        belt_combo = QComboBox(belt_cell)
-        belt_combo.setFixedHeight(32)
-        belt_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        for belt_key in _BELTS:
-            belt_combo.addItem(t(f"belt.{belt_key}"), belt_key)
-        idx = belt_combo.findData(st["belt"])
-        belt_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        belt_combo.setEnabled(not assigned)
-        belt_combo.currentIndexChanged.connect(
-            lambda _i, pid=pid, combo=belt_combo: self._on_belt_edited(pid, combo)
-        )
-        belt_lay.addWidget(belt_combo)
-        self.table.setCellWidget(i, 2, belt_cell)
+        # 2. Belt (Read-only)
+        belt = p.belt or "—"
+        if belt != "—":
+            belt = t(f"belt.{belt.lower()}")
+        belt_item = QTableWidgetItem(belt)
+        belt_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if assigned:
+            belt_item.setForeground(QColor(theme().color("text_secondary")))
+        self.table.setItem(i, 2, belt_item)
 
-        # ---- 3. weight ----
-        weight_cell = QWidget(viewport)
-        weight_lay = QHBoxLayout(weight_cell)
-        weight_lay.setContentsMargins(8, 3, 8, 3)
-        weight_lay.setSpacing(0)
-        weight_spin = QDoubleSpinBox(weight_cell)
-        weight_spin.setMinimum(10)
-        weight_spin.setMaximum(300)
-        weight_spin.setDecimals(1)
-        weight_spin.setSingleStep(0.5)
-        weight_spin.setFixedHeight(32)
-        weight_spin.setMinimumWidth(110)
-        weight_spin.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        weight_spin.setSuffix(t("champ.assign.weight_suffix"))
-        weight_spin.setValue(st["weight"])
-        weight_spin.setEnabled(not assigned)
-        weight_spin.valueChanged.connect(
-            lambda value, pid=pid: self._on_weight_edited(pid, value)
-        )
-        weight_lay.addWidget(weight_spin)
-        self.table.setCellWidget(i, 3, weight_cell)
+        # 3. Weight (Read-only)
+        weight = f"{p.weight_kg} kg" if p.weight_kg else "—"
+        weight_item = QTableWidgetItem(weight)
+        weight_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if assigned:
+            weight_item.setForeground(QColor(theme().color("text_secondary")))
+        self.table.setItem(i, 3, weight_item)
 
-        self._row_widgets[pid] = {
-            "row": i, "chk": chk, "belt": belt_combo, "weight": weight_spin,
-        }
+        self._row_widgets[pid] = {"row": i, "chk": chk}
         self._visible_ids.append(pid)
         self._paint_row(i, pid)
 
     def _paint_row(self, row, pid):
-        """Highlight ticked rows. Assigned rows are never highlighted."""
         st = self._state.get(pid) or {}
         checked = bool(st.get("checked")) and pid not in self.existing_ids
         brush = QBrush(QColor(theme().color("primary_soft"))) if checked else QBrush()
@@ -397,7 +296,6 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
     # ------------------------------------------------------------------
 
     def _on_cell_clicked(self, row, _col):
-        """Clicking anywhere on a row (outside its own controls) toggles it."""
         if row < 0 or row >= len(self._visible_ids):
             return
         pid = self._visible_ids[row]
@@ -405,7 +303,7 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
             return
         w = self._row_widgets.get(pid)
         if w is not None:
-            w["chk"].toggle()       # emits toggled -> _on_row_toggled
+            w["chk"].toggle()
 
     def _on_row_toggled(self, pid, checked):
         st = self._state.get(pid)
@@ -415,18 +313,6 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         if w is not None:
             self._paint_row(w["row"], pid)
         self._update_selected_count()
-
-    def _on_belt_edited(self, pid, combo):
-        st = self._state.get(pid)
-        if st is not None:
-            st["belt"] = combo.currentData()
-            st["belt_dirty"] = True
-
-    def _on_weight_edited(self, pid, value):
-        st = self._state.get(pid)
-        if st is not None:
-            st["weight"] = float(value)
-            st["weight_dirty"] = True
 
     def _on_select_all(self, checked):
         for pid in self._visible_ids:
@@ -443,35 +329,9 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
             self._paint_row(w["row"], pid)
         self._update_selected_count()
 
-    def _on_default_belt_changed(self, _index=0):
-        belt = self.default_belt.currentData()
-        for pid, st in self._state.items():
-            if pid in self.existing_ids or st["belt_stored"] or st["belt_dirty"]:
-                continue
-            st["belt"] = belt
-            w = self._row_widgets.get(pid)
-            if w is not None:
-                idx = w["belt"].findData(belt)
-                if idx >= 0:
-                    w["belt"].blockSignals(True)
-                    w["belt"].setCurrentIndex(idx)
-                    w["belt"].blockSignals(False)
-
-    def _on_default_weight_changed(self, value):
-        for pid, st in self._state.items():
-            if pid in self.existing_ids or st["weight_stored"] or st["weight_dirty"]:
-                continue
-            st["weight"] = float(value)
-            w = self._row_widgets.get(pid)
-            if w is not None:
-                w["weight"].blockSignals(True)
-                w["weight"].setValue(float(value))
-                w["weight"].blockSignals(False)
-
     def _selected_players(self):
-        """[(player_id, state)] for every ticked player, visible or not."""
         return [
-            (pid, st) for pid, st in self._state.items()
+            pid for pid, st in self._state.items()
             if st["checked"] and pid not in self.existing_ids
         ]
 
@@ -480,7 +340,6 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
         self.save_btn.setText(t("champ.assign.btn", n=count))
         self.save_btn.setEnabled(count > 0)
 
-        # Keep "Select all" in step with the visible, unassigned rows.
         eligible = [pid for pid in self._visible_ids if pid not in self.existing_ids]
         all_checked = bool(eligible) and all(self._state[pid]["checked"] for pid in eligible)
         self.select_all_check.blockSignals(True)
@@ -498,39 +357,16 @@ class AssignPlayerDialog(ThemedWidget, QDialog):
 
     def _on_save(self):
         self.error_label.hide()
-
         pending = self._selected_players()
+        
         if not pending:
             self._show_error(t("champ.assign.error.none_selected"))
             return
 
-        for pid, st in pending:
-            try:
-                championship_service.register_player(
-                    self.championship_id,
-                    pid,
-                    st["weight"],
-                    st["belt"],
-                    "",
-                    record_payment=True,
-                )
-            except Exception as e:
-                # Players registered so far stay registered. Reload so they show
-                # as "already assigned" and cannot be submitted (and charged) twice.
-                self._show_error(f"{st['name']}: {e}")
-                self._reload_players()
-                return
-
-            self.existing_ids.add(pid)
-            st["checked"] = False
-            self._registered_any = True
-
-        self.accept()
-
-    def reject(self):
-        # If some players were already registered before an error, closing the
-        # dialog must still report "accepted" so the caller refreshes its list.
-        if self._registered_any:
+        try:
+            # The service pulls belt/weight from the player's profile.
+            championship_service.assign_players(self.championship_id, pending)
             self.accept()
-        else:
-            super().reject()
+        except Exception as e:
+            self._show_error(str(e))
+            self._reload_players() # Reload on error to reflect partial success if it happened

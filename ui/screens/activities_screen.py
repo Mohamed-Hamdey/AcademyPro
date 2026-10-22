@@ -1,292 +1,274 @@
 """
-Activities management screen — v4 design.
+Activities management screen — v5 (Card layout with Detail view).
 """
-
 import os
 import sys
-from ui.utils import Debouncer
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QLabel,
+    QScrollArea, QFrame, QLabel, QStackedWidget, QButtonGroup
 )
-from qtpy.QtCore import Qt,QTimer
+from qtpy.QtCore import Qt, QTimer
 from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from services import activity_service
-from repositories.activities_repo import Activity
-from ui.components import Toolbar, SectionCard, EmptyState
+from ui.components import Toolbar, EmptyState
+from ui.theme import theme, ThemedWidget, make_segment
+from ui.screens.activity_detail_screen import ActivityDetailScreen
 from ui.dialogs.activity_form_dialog import ActivityFormDialog
-from ui.theme import theme, ThemedWidget, make_secondary, make_danger, make_warning
-from ui.design import SPACING
+from ui.theme import theme, ThemedWidget
+from ui.design import SPACING, RADIUS
 from ui.i18n import t
-from ui.message_box import warn, ask
-from ui.table_helpers import make_standard_table
+from ui.utils import Debouncer
+
+
+class ActivityCard(ThemedWidget, QFrame):
+    """Compact row card for the activities list."""
+    def __init__(self, act, on_click, parent=None):
+        QFrame.__init__(self, parent)
+        self.setObjectName("activityCard")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.act = act
+        self._on_click = on_click
+        self._build_ui()
+        self._init_theme()
+
+    def _build_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(16)
+
+        # Left: Color indicator (if any) + Name
+        if self.act.color:
+            color_strip = QFrame(self)
+            color_strip.setFixedWidth(6)
+            color_strip.setStyleSheet(f"background-color: {self.act.color}; border-radius: 3px;")
+            layout.addWidget(color_strip)
+
+        col1 = QVBoxLayout()
+        col1.setSpacing(4)
+        self.title = QLabel(self.act.name, self)
+        
+        days_str = ", ".join(t(f"weekday.{d.lower()}") for d in self.act.default_days)
+        self.sub = QLabel(days_str or "—", self)
+        
+        col1.addWidget(self.title)
+        col1.addWidget(self.sub)
+        layout.addLayout(col1, stretch=1)
+
+        # Right: Metrics (Active Players)
+        col2 = QVBoxLayout()
+        col2.setSpacing(4)
+        col2.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        count = activity_service.count_active_references(self.act.activity_id)
+        self.count_label = QLabel(t("activities.detail.kpi.players") + f": {count}", self)
+        col2.addWidget(self.count_label)
+        
+        layout.addLayout(col2)
+
+    def restyle(self):
+        tm = theme()
+        self.setStyleSheet(
+            f"QFrame#activityCard {{"
+            f"  background: {tm.color('surface')};"
+            f"  border: 1px solid {tm.color('border')};"
+            f"  border-radius: {RADIUS['md']}px;"
+            f"}}"
+            f"QFrame#activityCard:hover {{"
+            f"  border: 1px solid {tm.color('primary')};"
+            f"}}"
+        )
+        self.title.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {tm.color('text')};")
+        self.sub.setStyleSheet(f"font-size: 12px; color: {tm.color('text_secondary')};")
+        self.count_label.setStyleSheet(f"font-size: 12px; color: {tm.color('text')}; font-weight: 600;")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._on_click(self.act.activity_id)
+        super().mousePressEvent(event)
 
 
 class ActivitiesScreen(ThemedWidget, QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
-        self._rows = []
-        self._loaded = False
-        self._search_debouncer = Debouncer(250, self.refresh, parent=self)
+        self._dirty = True
         self._build_ui()
         self._init_theme()
 
     def showEvent(self, event):
         super().showEvent(event)
-        QTimer.singleShot(0, self.refresh)
+        if self._dirty:
+            self._dirty = False
+            QTimer.singleShot(0, self.refresh)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._dirty = True
 
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(SPACING["lg"])
+        self.stack = QStackedWidget()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.stack)
 
+        # --- List page ---
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACING["md"])
+
+        # Toolbar
         self.toolbar = Toolbar()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(t("activities.search_placeholder"))
+        self.search.setProperty("cssClass", "search")
+        self.search.setMinimumWidth(200)
+        self.debouncer = Debouncer(250, QTimer.singleShot(0, self.refresh), parent=self)
+        self.search.textChanged.connect(self.debouncer.trigger)
 
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(t("activities.search_placeholder"))
-        self.search_input.setProperty("cssClass", "search")
-        self.search_input.setMinimumWidth(240)
-        self.search_input.textChanged.connect(self._search_debouncer.trigger)
+        self.add_btn = QPushButton(t("activities.add"))
+        self.add_btn.clicked.connect(self._on_add)
 
-        self.show_inactive_checkbox = QCheckBox(t("activities.show_inactive"))
-        self.show_inactive_checkbox.stateChanged.connect(self.refresh)
+        self.toolbar.add_leading(self.search, stretch=1)
+        self.toolbar.add_trailing(self.add_btn)
+        layout.addWidget(self.toolbar)
 
-        self.add_button = QPushButton(t("activities.add"))
-        self.add_button.clicked.connect(self._on_add)
+        # Filter chips
+        chips_row = QHBoxLayout()
+        chips_container = QWidget(page)
+        chips_row = QHBoxLayout(chips_container)
+        chips_row.setContentsMargins(0, 0, 0, 0)
+        chips_row.setSpacing(SPACING["sm"])
+        
+        self.chip_all = QPushButton(t("activities.filter.all"), chips_container)
+        self.chip_active = QPushButton(t("activities.filter.active"), chips_container)
+        self.chip_archived = QPushButton(t("activities.filter.archived"), chips_container)
 
-        self.toolbar.add_leading(self.search_input, stretch=1)
-        self.toolbar.add_leading(self.show_inactive_checkbox)
-        self.toolbar.add_trailing(self.add_button)
+        self._chips_group = QButtonGroup(self)
+        self._chips_group.setExclusive(True)
+        self._active_chip = self.chip_all
 
-        root.addWidget(self.toolbar)
+        for chip in (self.chip_all, self.chip_active, self.chip_archived):
+            chip.setCheckable(True)
+            make_segment(chip)
+            self._chips_group.addButton(chip)
+            chip.clicked.connect(lambda checked, c=chip: self._on_chip_clicked(c))
+            chips_row.addWidget(chip)
+        
+        self.chip_all.setChecked(True)
+        chips_row.addStretch()
+        layout.addWidget(chips_container)
 
-        self.table_card = SectionCard(title=t("activities.title"))
+        # Scroll Area
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
 
-        self.table = make_standard_table(
-            headers=[
-                t("activities.col.name"),
-                t("activities.col.days"),
-                t("activities.col.subscriptions"),
-                t("activities.col.status"),
-                t("activities.col.color"),
-            ],
-            column_modes=["stretch", "stretch", "resize", "resize", "fixed"],
-            parent=self,
-        )
-        self.table.setColumnWidth(4, 60)
-        self.table.verticalHeader().setDefaultSectionSize(36)
-        self.table.horizontalHeader().setFixedHeight(36)
-        self.table.itemSelectionChanged.connect(self._update_actions)
-        self.table.cellDoubleClicked.connect(lambda *_: self._on_edit())
+        self.cards_widget = QWidget()
+        self.cards_layout = QVBoxLayout(self.cards_widget)
+        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.cards_layout.setSpacing(SPACING["md"])
+        self.cards_layout.addStretch()
 
-        self.table_card.body.addWidget(self.table)
+        self.scroll.setWidget(self.cards_widget)
+        layout.addWidget(self.scroll, stretch=1)
 
+        # Empty states
         self.empty_first_run = EmptyState(icon="🏃", message=t("activities.empty"), action_text=t("activities.add"), on_action=self._on_add)
-        self.empty_first_run.hide()
-        self.table_card.body.addWidget(self.empty_first_run)
-
         self.empty_no_results = EmptyState(icon="🔍", message=t("activities.no_results"))
-        self.empty_no_results.hide()
-        self.table_card.body.addWidget(self.empty_no_results)
+        for empty in (self.empty_first_run, self.empty_no_results):
+            empty.hide()
+            layout.addWidget(empty, stretch=1)
 
-        self.table_card.body.addSpacing(SPACING["sm"])
-
-        action_row = QHBoxLayout()
-        action_row.setSpacing(SPACING["sm"])
-
-        self.toggle_button = QPushButton(t("activities.action.deactivate"))
-        make_warning(self.toggle_button)  # Yellow
-        self.toggle_button.clicked.connect(self._on_toggle_active)
-        self.toggle_button.setEnabled(False)
-
-        self.delete_button = QPushButton(t("activities.action.delete"))
-        make_danger(self.delete_button)
-        self.delete_button.clicked.connect(self._on_delete)
-        self.delete_button.setEnabled(False)
-
-        action_row.addStretch()
-        action_row.addWidget(self.toggle_button)
-        action_row.addWidget(self.delete_button)
-
-        self.table_card.body.addLayout(action_row)
-        root.addWidget(self.table_card, stretch=1)
+        self.stack.addWidget(page)
+        self.stack.setCurrentIndex(0)
 
     def restyle(self):
-        tm = theme()
-        self.table.setStyleSheet(
-            f"QTableWidget {{"
-            f"  selection-background-color: {tm.color('primary_soft')};"
-            f"  selection-color: {tm.color('text')};"
-            f"}}"
-            f"QTableWidget::item:selected {{"
-            f"  background-color: {tm.color('primary_soft')};"
-            f"  color: {tm.color('text')};"
-            f"}}"
-            f"QTableWidget::item:hover:!selected {{"
-            f"  background-color: {tm.color('surface_alt')};"
-            f"}}"
-        )
-        if hasattr(self, "_rows"):
-            self._render_rows(self._rows)
+        pass
+
+    def _on_chip_clicked(self, chip):
+        if self._active_chip is chip:
+            return
+        self._active_chip = chip
+        QTimer.singleShot(0, self.refresh)
+
+    def _clear_cards(self):
+        while self.cards_layout.count() > 1:
+            item = self.cards_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
 
     def refresh(self):
-        # Always fetch all (including suspended). 
-        # If show_inactive is unchecked, we'll still show them but with a suspended tag.
-        all_acts = activity_service.list_all()
+        self.setUpdatesEnabled(False)
+        self.cards_widget.setUpdatesEnabled(False)
+        self.scroll.setUpdatesEnabled(False)
 
-        query = self.search_input.text().strip().lower()
-        if query:
-            all_acts = [
-                a for a in all_acts
-                if query in a.name.lower()
-            ]
+        try:
+            self._clear_cards()
 
-        self._rows = all_acts
-        self._render_rows(all_acts)
+            # 1. Fetch data based on filter
+            if self._active_chip is self.chip_archived:
+                from repositories import activities_repo
+                acts = activities_repo.list_archived()
+            elif self._active_chip is self.chip_active:
+                acts = activity_service.list_active()
+            else:
+                acts = activity_service.list_all()
 
-    def _render_rows(self, activities):
-        search_text = self.search_input.text().strip()
+            # 2. Apply search
+            query = self.search.text().strip().lower()
+            if query:
+                acts = [a for a in acts if query in a.name.lower()]
 
-        if not activities:
-            self.table.hide()
-            if search_text:
+            # 3. Build cards
+            has_cards = False
+            insert_pos = self.cards_layout.count() - 1
+
+            for a in acts:
+                has_cards = True
+                card = ActivityCard(a, self._open_detail, parent=self.cards_widget)
+                self.cards_layout.insertWidget(insert_pos, card)
+                insert_pos += 1
+
+            # 4. Toggle empty states
+            if has_cards:
+                self.scroll.show()
                 self.empty_first_run.hide()
-                self.empty_no_results.show()
-            else:
                 self.empty_no_results.hide()
-                self.empty_first_run.show()
-            self._update_actions()
-            return
-
-        self.table.show()
-        self.empty_first_run.hide()
-        self.empty_no_results.hide()
-
-        self.table.setRowCount(len(activities))
-        tm = theme()
-
-        has_any_color = any(a.color for a in activities)
-        self.table.setColumnHidden(4, not has_any_color)
-
-        show_inactive = self.show_inactive_checkbox.isChecked()
-
-        for i, a in enumerate(activities):
-            # If it's inactive and the checkbox is OFF, we still show it, 
-            # but we can dim it to indicate it's suspended.
-            is_suspended = not a.active
-            
-            name = a.name
-            name_item = QTableWidgetItem(name)
-            if is_suspended:
-                name_item.setForeground(QColor(tm.color("text_secondary")))
-            self.table.setItem(i, 0, name_item)
-
-            days_str = ", ".join(t(f"weekday.{d.lower()}") for d in a.default_days)
-            days_item = QTableWidgetItem(days_str)
-            if is_suspended:
-                days_item.setForeground(QColor(tm.color("text_secondary")))
-            self.table.setItem(i, 1, days_item)
-
-            active_count = activity_service.count_active_references(a.activity_id)
-            count_item = QTableWidgetItem(str(active_count))
-            count_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if is_suspended:
-                count_item.setForeground(QColor(tm.color("text_secondary")))
-            self.table.setItem(i, 2, count_item)
-
-            # Status
-            if a.active:
-                status_text = t("activities.status.active")
-                color = tm.color("success")
-                bg = tm.color("success_soft")
             else:
-                status_text = t("activities.status.inactive") # Suspended
-                color = tm.color("warning")
-                bg = tm.color("warning_soft")
+                self.scroll.hide()
+                filtered = bool(query) or self._active_chip is not self.chip_all
+                self.empty_no_results.setVisible(filtered)
+                self.empty_first_run.setVisible(not filtered)
 
-            status_item = QTableWidgetItem(status_text)
-            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_item.setForeground(QColor(color))
-            status_item.setBackground(QColor(bg))
-            self.table.setItem(i, 3, status_item)
-
-            if has_any_color:
-                color_item = QTableWidgetItem()
-                if a.color:
-                    color_item.setBackground(QColor(a.color))
-                color_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-                self.table.setItem(i, 4, color_item)
-
-        self._update_actions()
-
-    def _selected(self) -> Activity:
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
-        idx = rows[0].row()
-        if idx < 0 or idx >= len(self._rows):
-            return None
-        return self._rows[idx]
-
-    def _update_actions(self):
-        a = self._selected()
-        enabled = a is not None
-        self.toggle_button.setEnabled(enabled)
-        self.delete_button.setEnabled(enabled)
-
-        if a is None or a.active:
-            self.toggle_button.setText(t("activities.action.deactivate"))
-            make_warning(self.toggle_button)
-        else:
-            self.toggle_button.setText(t("activities.action.reactivate"))
-            make_warning(self.toggle_button)
+        finally:
+            self.setUpdatesEnabled(True)
+            self.cards_widget.setUpdatesEnabled(True)
+            self.scroll.setUpdatesEnabled(True)
+            self.cards_widget.update()
+            self.scroll.update()
 
     def _on_add(self):
         dlg = ActivityFormDialog(parent=self)
         if dlg.exec():
             QTimer.singleShot(0, self.refresh)
 
-    def _on_edit(self):
-        a = self._selected()
-        if a is None:
-            return
-        dlg = ActivityFormDialog(activity=a, parent=self)
-        if dlg.exec():
-            QTimer.singleShot(0, self.refresh)
+    def _open_detail(self, activity_id):
+        detail = ActivityDetailScreen(activity_id, on_back=self._close_detail, parent=self)
+        self.stack.addWidget(detail)
+        self.stack.setCurrentWidget(detail)
 
-    def _on_delete(self):
-        a = self._selected()
-        if a is None:
+    def _close_detail(self):
+        curr = self.stack.currentWidget()
+        if not curr:
             return
-        if not ask(self, t("activities.confirm.delete_title"), t("activities.confirm.delete_msg", name=a.name)):
-            return
-        
-        try:
-            # Move to archive (Recycle Bin)
-            from repositories import activities_repo
-            activities_repo.archive(a.activity_id)
-        except Exception as e:
-            warn(self, t("activities.confirm.title"), str(e))
-            return
-            
-        QTimer.singleShot(0, self.refresh)
-
-    def _on_toggle_active(self):
-        a = self._selected()
-        if a is None:
-            return
-
-        if a.active:
-            # Suspend (Soft-disable)
-            refs = activity_service.count_references(a.activity_id)
-            msg_key = "activities.confirm.deactivate_with_refs" if refs > 0 else "activities.confirm.deactivate"
-            if not ask(self, t("activities.confirm.title"), t(msg_key, name=a.name, count=refs)):
-                return
-            activity_service.deactivate(a.activity_id)
-        else:
-            # Reactivate
-            activity_service.reactivate(a.activity_id)
-
+        self.stack.setCurrentIndex(0)
+        self.stack.removeWidget(curr)
+        curr.setParent(None)
+        curr.hide()
+        curr.deleteLater()
         QTimer.singleShot(0, self.refresh)

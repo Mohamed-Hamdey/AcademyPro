@@ -231,3 +231,137 @@ def list_archived() -> list[Activity]:
         return [Activity.from_row(r) for r in rows]
     finally:
         conn.close()
+        
+        
+def get_activity_kpis(activity_id: int, date_from: str, date_to: str) -> dict:
+    """
+    Returns a dictionary of raw numbers for the KPI strip.
+    """
+    conn = get_connection()
+    try:
+        # 1. Active Players (Current Snapshot, ignores date range)
+        active_row = conn.execute(
+            "SELECT COUNT(DISTINCT player_id) FROM subscriptions "
+            "WHERE activity_id = ? AND status = 'active' AND archived_at IS NULL",
+            (activity_id,)
+        ).fetchone()
+        
+        # 2. Revenue in Period
+        rev_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(p.amount), 0) 
+            FROM payments p
+            JOIN subscriptions s ON s.subscription_id = p.subscription_id
+            WHERE s.activity_id = ? AND p.payment_date >= ? AND p.payment_date <= ?
+            """,
+            (activity_id, date_from, date_to)
+        ).fetchone()
+
+        # 3. Attendance in Period
+        att_row = conn.execute(
+            """
+            SELECT COUNT(*) 
+            FROM attendance_log a
+            JOIN subscriptions s ON s.subscription_id = a.subscription_id
+            WHERE s.activity_id = ? AND a.result = 'allowed'
+              AND substr(a.scan_datetime, 1, 10) >= ? AND substr(a.scan_datetime, 1, 10) <= ?
+            """,
+            (activity_id, date_from, date_to)
+        ).fetchone()
+
+        # 4. Expiring in 7 Days (Current Snapshot)
+        exp_row = conn.execute(
+            """
+            SELECT COUNT(*) FROM subscriptions
+            WHERE activity_id = ? AND status = 'active' AND archived_at IS NULL
+              AND expiry_date >= date('now') AND expiry_date <= date('now', '+7 days')
+            """,
+            (activity_id,)
+        ).fetchone()
+
+        # 5. Low Sessions (Current Snapshot)
+        low_row = conn.execute(
+            """
+            SELECT COUNT(*) FROM subscriptions
+            WHERE activity_id = ? AND status = 'active' AND archived_at IS NULL
+              AND sessions_remaining <= 1
+            """,
+            (activity_id,)
+        ).fetchone()
+
+        return {
+            "active_players": active_row[0] if active_row else 0,
+            "revenue": float(rev_row[0]) if rev_row else 0.0,
+            "attendance": int(att_row[0]) if att_row else 0,
+            "expiring_soon": int(exp_row[0]) if exp_row else 0,
+            "low_sessions": int(low_row[0]) if low_row else 0,
+        }
+    finally:
+        conn.close()
+
+
+def get_activity_charts(activity_id: int, months: int = 6, weeks: int = 8) -> dict:
+    """
+    Returns data for the two charts (Revenue by Month, Attendance by Week).
+    """
+    import datetime
+    import calendar
+    conn = get_connection()
+    today = datetime.date.today()
+    
+    revenue_data = []
+    attendance_data = []
+    
+    try:
+        # --- Revenue by Month (Last N months) ---
+        for i in range(months - 1, -1, -1):
+            total_months = today.year * 12 + today.month - 1 - i
+            y = total_months // 12
+            m = (total_months % 12) + 1
+            first_day = datetime.date(y, m, 1).isoformat()
+            last_day = datetime.date(y, m, calendar.monthrange(y, m)[1]).isoformat()
+            
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(p.amount), 0) 
+                FROM payments p
+                JOIN subscriptions s ON s.subscription_id = p.subscription_id
+                WHERE s.activity_id = ? AND p.payment_date >= ? AND p.payment_date <= ?
+                """,
+                (activity_id, first_day, last_day)
+            ).fetchone()
+            
+            revenue_data.append({
+                "month_label": datetime.date(y, m, 1).strftime("%b %Y"),
+                "total": float(row[0]) if row else 0.0,
+            })
+
+        # --- Attendance by Week (Last N weeks) ---
+        start_of_this_week = today - datetime.timedelta(days=today.weekday())
+        for i in range(weeks - 1, -1, -1):
+            week_start = start_of_this_week - datetime.timedelta(weeks=i)
+            week_end = week_start + datetime.timedelta(days=6)
+            
+            row = conn.execute(
+                """
+                SELECT COUNT(*) 
+                FROM attendance_log a
+                JOIN subscriptions s ON s.subscription_id = a.subscription_id
+                WHERE s.activity_id = ? AND a.result = 'allowed'
+                  AND substr(a.scan_datetime, 1, 10) >= ? AND substr(a.scan_datetime, 1, 10) <= ?
+                """,
+                (activity_id, week_start.isoformat(), week_end.isoformat())
+            ).fetchone()
+            
+            attendance_data.append({
+                "week_label": week_start.strftime("%b %d"),
+                "count": int(row[0]) if row else 0,
+            })
+            
+    finally:
+        conn.close()
+        
+    return {
+        "revenue": revenue_data,
+        "attendance": attendance_data
+    }

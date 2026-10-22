@@ -30,7 +30,7 @@ from qtpy.QtWidgets import (
     QComboBox, QDateEdit, QTableWidgetItem, QFileDialog, QDialog,QTableWidget
     
 )
-from qtpy.QtCore import Qt, QDate
+from qtpy.QtCore import Qt, QDate,QTimer
 from qtpy.QtGui import QColor, QFont
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))

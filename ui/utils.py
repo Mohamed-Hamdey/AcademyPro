@@ -44,3 +44,29 @@ class Debouncer(QObject):
     def cancel(self):
         """Stop any pending trigger without firing."""
         self._timer.stop()
+
+
+def get_date_range(range_key: str) -> tuple[str, str]:
+    """Returns (date_from, date_to) in YYYY-MM-DD format based on the range key."""
+    from datetime import date, timedelta
+    import calendar
+    
+    today = date.today()
+    
+    if range_key == "this_month":
+        first = date(today.year, today.month, 1)
+        last = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+    elif range_key == "last_30_days":
+        first = today - timedelta(days=30)
+        last = today
+    elif range_key == "last_3_months":
+        first = today - timedelta(days=90)
+        last = today
+    elif range_key == "this_year":
+        first = date(today.year, 1, 1)
+        last = date(today.year, 12, 31)
+    else: # Default to this month
+        first = date(today.year, today.month, 1)
+        last = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+        
+    return first.isoformat(), last.isoformat()

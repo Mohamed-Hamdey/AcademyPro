@@ -10,7 +10,7 @@ from qtpy.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QLabel,QSizePolicy
 )
 from ui.message_box import warn, ask
-from qtpy.QtCore import Qt, QSize
+from qtpy.QtCore import Qt, QSize,QTimer
 from qtpy.QtGui import QPixmap, QColor, QPainter, QBrush, QFont, QIcon
 from ui.utils import Debouncer
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))

@@ -608,10 +608,10 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
             if status_filter and row["status"] != status_filter:
                 continue
-            filtered.append(row)
-            if time_filter is not None and row["player"].session_time != time_filter: # <--- NEW
+                
+            if time_filter is not None and row["player"].session_time != time_filter:
                 continue
-            
+                
             filtered.append(row)
             
         if self._sort_col < 0:
