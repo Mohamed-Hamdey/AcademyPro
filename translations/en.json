@@ -1088,7 +1088,11 @@
 "players.filter.custom_sessions": "Custom Sessions...",
 "players.filter.custom_sessions_title": "Custom Sessions Filter",
 "msg.ok": "OK",
-"players.filter.custom_sessions_prompt": "Enter the number of sessions to filter by:"
+"players.filter.custom_sessions_prompt": "Enter the number of sessions to filter by:",
+"activities.dialog.name": "Activity Name",
+"activities.dialog.requires_belt": "This activity uses belts",
+"activities.dialog.requires_weight": "This activity requires weight tracking",
+"activities.dialog.error.name_required": "Activity name is required."
 
 
 }

@@ -169,7 +169,7 @@ class ScanScreen(ThemedWidget, QWidget):
         self.activity_filter = QComboBox()
         self.activity_filter.addItem(t("checkin.recent.filter.all_activities"), None)
         for act in activity_service.list_active():
-            name = (act.name_ar if is_ar() else act.name_en)
+            name = act.name
             self.activity_filter.addItem(name, act.activity_id)
         self.activity_filter.currentIndexChanged.connect(self._render_recent)
 
@@ -262,7 +262,7 @@ class ScanScreen(ThemedWidget, QWidget):
         self.session_input.clear()
         self.session_input.addItem(t("checkin.session.auto"), AUTO_ACTIVITY)
         for act in activity_service.list_active():
-            display = f"{act.name_en} · {act.name_ar}" if act.name_en != act.name_ar else act.name_en
+            display = act.name
             self.session_input.addItem(display, act.activity_id)
         self.session_input.setCurrentIndex(0)
         self.session_input.blockSignals(False)

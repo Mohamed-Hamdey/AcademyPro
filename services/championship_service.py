@@ -95,7 +95,7 @@ def register_player(champ_id: int, player_id: int, weight: float, belt: str, not
                 amount=champ.entry_fee,
                 payment_date=date.fromisoformat(champ.event_date),
                 method="cash",
-                notes=f"Entry fee for {champ.name}",   # ← FIX: was champ.name_en
+                notes=f"Entry fee for {champ.name}",   
             )
         except Exception:
             logging.getLogger(__name__).exception(

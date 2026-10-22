@@ -96,7 +96,7 @@ class ChampionshipFormDialog(ThemedWidget, QDialog):
         # activity so that "Assign Players" can filter eligible players.
         self.activity_combo = QComboBox(self)
         for act in activity_service.list_active():
-            name = act.name_ar if is_ar() else act.name_en
+            name = act.name
             self.activity_combo.addItem(name, act.activity_id)
         self.activity_combo.currentIndexChanged.connect(self._on_activity_changed)
 
@@ -224,7 +224,7 @@ class ChampionshipFormDialog(ThemedWidget, QDialog):
                 # re-assign the championship to the first activity in the list.
                 act = activity_service.get(self.championship.activity_id)
                 if act is not None:
-                    name = act.name_ar if is_ar() else act.name_en
+                    name = act.name
                     self.activity_combo.addItem(name, act.activity_id)
                     self.activity_combo.setCurrentIndex(self.activity_combo.count() - 1)
 

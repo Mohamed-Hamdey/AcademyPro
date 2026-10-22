@@ -142,8 +142,8 @@ def _attendance_for_day(d: date) -> dict:
         rows = conn.execute(
             """
             SELECT a.activity_id,
-                   COALESCE(act.name_en, '?') AS name_en,
-                   COALESCE(act.name_ar, '?') AS name_ar,
+                   COALESCE(act.name, '?') AS name_en,
+                   COALESCE(act.name, '?') AS name_ar,
                    COUNT(*) AS cnt
             FROM attendance_log a
             LEFT JOIN activities act ON act.activity_id = a.activity_id
@@ -189,8 +189,8 @@ def _payments_for_day(d: date) -> list[dict]:
                    p.payment_date, p.notes, p.recorded_by,
                    pl.full_name AS player_name,
                    s.subscription_id, s.activity_id,
-                   act.name_en AS activity_name_en,
-                   act.name_ar AS activity_name_ar
+                   act.name AS activity_name_en,
+                   act.name AS activity_name_ar
             FROM payments p
             JOIN players pl ON pl.player_id = p.player_id
             LEFT JOIN subscriptions s ON s.subscription_id = p.subscription_id
@@ -217,8 +217,8 @@ def _low_session_players(threshold: int = 2) -> list[dict]:
             SELECT s.subscription_id, s.sessions_remaining, s.sessions_total,
                    s.activity_id,
                    pl.player_id, pl.full_name,
-                   act.name_en AS activity_name_en,
-                   act.name_ar AS activity_name_ar
+                   act.name AS activity_name_en,
+                   act.name AS activity_name_ar
             FROM subscriptions s
             JOIN players pl ON pl.player_id = s.player_id
             LEFT JOIN activities act ON act.activity_id = s.activity_id
@@ -307,8 +307,8 @@ def month_summary(year: int, month: int) -> dict:
         rows = conn.execute(
             """
             SELECT s.activity_id,
-                   COALESCE(act.name_en, '?') AS name_en,
-                   COALESCE(act.name_ar, '?') AS name_ar,
+                   COALESCE(act.name, '?') AS name_en,
+                   COALESCE(act.name, '?') AS name_ar,
                    COALESCE(SUM(p.amount), 0) AS total,
                    COUNT(p.payment_id) AS count
             FROM payments p
@@ -388,8 +388,8 @@ def _expiring_soon(days: int = 7) -> list[dict]:
             SELECT s.subscription_id, s.expiry_date, s.sessions_remaining,
                    s.sessions_total, s.activity_id,
                    pl.player_id, pl.full_name,
-                   act.name_en AS activity_name_en,
-                   act.name_ar AS activity_name_ar
+                   act.name AS activity_name_en,
+                   act.name AS activity_name_ar
             FROM subscriptions s
             JOIN players pl ON pl.player_id = s.player_id
             LEFT JOIN activities act ON act.activity_id = s.activity_id
@@ -550,8 +550,8 @@ def payments_for_day_detailed(d: date,
                    p.notes, p.recorded_by, p.created_at,
                    pl.full_name AS player_name, pl.player_id,
                    s.subscription_id, s.activity_id,
-                   act.name_en AS activity_name_en,
-                   act.name_ar AS activity_name_ar
+                   act.name AS activity_name_en,
+                   act.name AS activity_name_ar
             FROM payments p
             JOIN players pl ON pl.player_id = p.player_id
             LEFT JOIN subscriptions s ON s.subscription_id = p.subscription_id

@@ -110,8 +110,8 @@ def get_today_with_details(limit: int = 50) -> list[dict]:
                    a.override_note,
                    a.subscription_id,
                    a.activity_id,
-                   act.name_en      AS activity_name_en,
-                   act.name_ar      AS activity_name_ar,
+                   act.name AS activity_name_en,
+                   act.name AS activity_name_ar,
                    a.recorded_by
             FROM attendance_log a
             LEFT JOIN players    pl  ON pl.player_id    = a.player_id
@@ -154,8 +154,8 @@ def get_by_date_with_details(day, limit: int = 200) -> list[dict]:
                    a.override_note,
                    a.subscription_id,
                    a.activity_id,
-                   act.name_en      AS activity_name_en,
-                   act.name_ar      AS activity_name_ar,
+                   act.name AS activity_name_en,
+                   act.name AS activity_name_ar,
                    a.recorded_by
             FROM attendance_log a
             LEFT JOIN players    pl  ON pl.player_id    = a.player_id

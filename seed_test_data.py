@@ -198,7 +198,7 @@ def _find_user(username: str):
 
 def _find_activity(name_en: str):
     for a in activities_repo.list_all(include_inactive=True) or []:
-        if (a.name_en or "").strip() == name_en.strip():
+        if (a.name or "").strip() == name_en.strip():
             return a
     return None
 

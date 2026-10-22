@@ -140,7 +140,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         if query:
             all_acts = [
                 a for a in all_acts
-                if query in a.name_en.lower() or query in a.name_ar.lower()
+                if query in a.name.lower()
             ]
 
         self._rows = all_acts
@@ -177,7 +177,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
             # but we can dim it to indicate it's suspended.
             is_suspended = not a.active
             
-            name = f"{a.name_en} · {a.name_ar}"
+            name = a.name
             name_item = QTableWidgetItem(name)
             if is_suspended:
                 name_item.setForeground(QColor(tm.color("text_secondary")))
@@ -260,7 +260,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
         a = self._selected()
         if a is None:
             return
-        if not ask(self, t("activities.confirm.delete_title"), t("activities.confirm.delete_msg", name=a.name_en)):
+        if not ask(self, t("activities.confirm.delete_title"), t("activities.confirm.delete_msg", name=a.name)):
             return
         
         try:
@@ -282,7 +282,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
             # Suspend (Soft-disable)
             refs = activity_service.count_references(a.activity_id)
             msg_key = "activities.confirm.deactivate_with_refs" if refs > 0 else "activities.confirm.deactivate"
-            if not ask(self, t("activities.confirm.title"), t(msg_key, name=a.name_en, count=refs)):
+            if not ask(self, t("activities.confirm.title"), t(msg_key, name=a.name, count=refs)):
                 return
             activity_service.deactivate(a.activity_id)
         else:

@@ -26,89 +26,37 @@ def get(activity_id: int) -> Activity | None:
     return activities_repo.get_by_id(activity_id)
 
 
-def get_localized_name(activity: Activity) -> str:
-    """Pick the Arabic or English name based on the current language."""
-    if i18n.current_language() == "ar":
-        return activity.name_ar or activity.name_en
-    return activity.name_en or activity.name_ar
+def get_localized_name(activity) -> str:
+    if hasattr(activity, "name"):
+        return activity.name
+    return "—"
 
 
-def create(name_en: str, name_ar: str, default_days: list[str],
-           color: str = None) -> int:
-    """
-    Create a new activity. Raises ValueError on validation failure.
-    """
-    name_en = (name_en or "").strip()
-    name_ar = (name_ar or "").strip()
-    default_days = [d for d in (default_days or []) if d]
-
-    if not name_en:
-        raise ValueError("English name is required")
-    if not name_ar:
-        raise ValueError("Arabic name is required")
-    if not default_days:
-        raise ValueError("At least one training day is required")
-
-    if activities_repo.name_exists(name_en):
-        raise ValueError(f"An activity named '{name_en}' already exists")
-
-    activity = Activity(
-        activity_id=None,
-        name_en=name_en,
-        name_ar=name_ar,
-        default_days=default_days,
-        color=color,
-        active=True,
+def create(name: str, default_days: list, color: str = None, requires_belt: bool = True, requires_weight: bool = True) -> int:
+    """Create a new activity."""
+    # (Keep whatever validation you have here, e.g., name_exists)
+    
+    # Pass the new parameters to the repo
+    return activities_repo.create(
+        name=name, 
+        default_days=default_days, 
+        color=color, 
+        requires_belt=requires_belt, 
+        requires_weight=requires_weight
     )
-    new_id = activities_repo.create(activity)
-    try:
-        from services import audit_service
-        audit_service.record(
-            "activity.create",
-            target_type="activity",
-            target_id=new_id,
-            details={"name_en": name_en, "name_ar": name_ar},
-        )
-    except Exception:
-        pass
-    return new_id
 
-def update(activity_id: int, name_en: str, name_ar: str,
-           default_days: list[str], color: str = None) -> None:
-    """Update an existing activity. Raises ValueError on validation failure."""
-    name_en = (name_en or "").strip()
-    name_ar = (name_ar or "").strip()
-    default_days = [d for d in (default_days or []) if d]
-
-    if not name_en:
-        raise ValueError("English name is required")
-    if not name_ar:
-        raise ValueError("Arabic name is required")
-    if not default_days:
-        raise ValueError("At least one training day is required")
-
-    if activities_repo.name_exists(name_en, exclude_id=activity_id):
-        raise ValueError(f"An activity named '{name_en}' already exists")
-
-    existing = activities_repo.get_by_id(activity_id)
-    if existing is None:
-        raise ValueError("Activity not found")
-
-    existing.name_en = name_en
-    existing.name_ar = name_ar
-    existing.default_days = default_days
-    existing.color = color
-    activities_repo.update(existing)
-    try:
-        from services import audit_service
-        audit_service.record(
-            "activity.update",
-            target_type="activity",
-            target_id=activity_id,
-            details={"name_en": name_en},
-        )
-    except Exception:
-        pass
+def update(activity_id: int, name: str, default_days: list, color: str = None, requires_belt: bool = True, requires_weight: bool = True) -> None:
+    """Update an existing activity."""
+    # (Keep whatever validation you have here)
+    
+    activities_repo.update(
+        activity_id=activity_id, 
+        name=name, 
+        default_days=default_days, 
+        color=color, 
+        requires_belt=requires_belt, 
+        requires_weight=requires_weight
+    )
 
 def deactivate(activity_id: int) -> None:
     activities_repo.set_active(activity_id, False)

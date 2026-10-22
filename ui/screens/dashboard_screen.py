@@ -225,8 +225,8 @@ class DashboardScreen(ThemedWidget, QWidget):
         self.sport_filter = QComboBox()
         self.sport_filter.addItem(t("dash.payments.filter.all_sports"), None)
         for act in activity_service.list_active():
-            name = (act.name_ar if i18n.current_language() == "ar"
-                    else act.name_en)
+            name = act.name
+
             self.sport_filter.addItem(name, act.activity_id)
         self.sport_filter.currentIndexChanged.connect(self._on_filters_changed)
 

@@ -130,8 +130,8 @@ class SubscriptionFormDialog(ThemedWidget, QDialog):
         for a in self._activities:
             # Include both names, in case the receptionist sees someone who
             # doesn't know the app's language.
-            display = f"{a.name_en} · {a.name_ar}" if a.name_en != a.name_ar else a.name_en
-            self.activity_input.addItem(display, a.activity_id)
+            display = a.name
+        self.activity_input.addItem(display, a.activity_id)
         self.activity_input.currentIndexChanged.connect(self._on_activity_changed)
 
         # ---- Preset dropdown ----

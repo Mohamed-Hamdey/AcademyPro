@@ -116,8 +116,8 @@ class ActivityFormDialog(ThemedWidget, QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # ---- Text fields ----
-        self.name_en_input = QLineEdit(self)
-        self.name_ar_input = QLineEdit(self)
+        self.name_input = QLineEdit(self) # Replaces name_en and name_ar
+
 
         # ---- Training days ----
         days_container = QWidget(self)
@@ -144,11 +144,18 @@ class ActivityFormDialog(ThemedWidget, QDialog):
         color_row.addWidget(self.color_preview)
         color_row.addStretch()
 
+        # ---- Requirements (v4) ----
+        self.requires_belt_cb = QCheckBox(t("activities.dialog.requires_belt"), self)
+        self.requires_weight_cb = QCheckBox(t("activities.dialog.requires_weight"), self)
+        self.requires_belt_cb.setChecked(True)
+        self.requires_weight_cb.setChecked(True)
+
         # ---- Form rows with asterisks ----
-        form.addRow(_FieldLabel(t("activities.dialog.name_en"), True, self), self.name_en_input)
-        form.addRow(_FieldLabel(t("activities.dialog.name_ar"), True, self), self.name_ar_input)
+        form.addRow(_FieldLabel(t("activities.dialog.name"), True, self), self.name_input)
         form.addRow(_FieldLabel(t("activities.dialog.days"), False, self), days_container)
         form.addRow(_FieldLabel(t("activities.dialog.color"), False, self), color_row)
+        form.addRow(_FieldLabel("", False, self), self.requires_belt_cb)
+        form.addRow(_FieldLabel("", False, self), self.requires_weight_cb)
         layout.addLayout(form)
 
         # ---- Divider ----
@@ -204,12 +211,14 @@ class ActivityFormDialog(ThemedWidget, QDialog):
     # ---------- prefill ----------
 
     def _prefill(self, activity):
-        self.name_en_input.setText(activity.name_en)
-        self.name_ar_input.setText(activity.name_ar)
+        self.name_input.setText(activity.name)
+
         for day_key in (activity.default_days or []):
             cb = self.day_checkboxes.get(day_key)
             if cb:
                 cb.setChecked(True)
+        self.requires_belt_cb.setChecked(bool(activity["requires_belt"]))
+        self.requires_weight_cb.setChecked(bool(activity["requires_weight"]))
         self._update_color_preview()
 
     # ---------- color ----------
@@ -251,25 +260,30 @@ class ActivityFormDialog(ThemedWidget, QDialog):
     def _on_save(self):
         self.error_label.hide()
 
-        name_en = self.name_en_input.text().strip()
-        name_ar = self.name_ar_input.text().strip()
+        name = self.name_input.text().strip()
         days = [day for day, cb in self.day_checkboxes.items() if cb.isChecked()]
+        
+        if not name:
+            self._show_error(t("activities.dialog.error.name_required"))
+            return
 
         try:
             if self.editing:
                 activity_service.update(
                     self.activity.activity_id,
-                    name_en=name_en,
-                    name_ar=name_ar,
+                    name=name,
                     default_days=days,
                     color=self._selected_color,
+                    requires_belt=self.requires_belt_cb.isChecked(),
+                    requires_weight=self.requires_weight_cb.isChecked(),
                 )
             else:
                 activity_service.create(
-                    name_en=name_en,
-                    name_ar=name_ar,
+                    name=name,
                     default_days=days,
                     color=self._selected_color,
+                    requires_belt=self.requires_belt_cb.isChecked(),
+                    requires_weight=self.requires_weight_cb.isChecked(),
                 )
         except ValueError as e:
             self._show_error(str(e))

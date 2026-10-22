@@ -312,7 +312,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         self.acts_table.show()
         self.acts_empty.hide()
         for i, a in enumerate(acts):
-            name_item = QTableWidgetItem(f"{a.name_en} · {a.name_ar}")
+            name_item = QTableWidgetItem(a.name)
             name_item.setData(Qt.ItemDataRole.UserRole, a.activity_id)
             self.acts_table.setItem(i, 0, name_item)
             self.acts_table.setItem(i, 1, QTableWidgetItem(a.archived_at or "—"))

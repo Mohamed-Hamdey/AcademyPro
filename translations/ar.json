@@ -1090,7 +1090,12 @@
 "players.filter.custom_sessions": "عدد حصص مخصص...",
 "players.filter.custom_sessions_title": "تصفية بعدد الحصص",
 "players.filter.custom_sessions_prompt": "أدخل عدد الحصص للتصفية:",
-"msg.ok": "موافق"
+"msg.ok": "موافق",
+"activities.dialog.name": "اسم النشاط",
+"activities.dialog.requires_belt": "هذا النشاط يستخدم الأحزمة",
+"activities.dialog.requires_weight": "هذا النشاط يتطلب تتبع الوزن",
+"activities.dialog.error.name_required": "اسم النشاط مطلوب."
+
 
 
 

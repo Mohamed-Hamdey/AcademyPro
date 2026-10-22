@@ -120,7 +120,7 @@ class TodayLogDialog(ThemedWidget, QDialog):
         self.activity_filter = QComboBox()
         self.activity_filter.addItem(t("checkin.recent.filter.all_activities"), None)
         for act in activity_service.list_active():
-            name = act.name_ar if is_ar() else act.name_en
+            name = act.name
             self.activity_filter.addItem(name, act.activity_id)
         self.activity_filter.currentIndexChanged.connect(self._render)
         filters.addWidget(self.activity_filter)
