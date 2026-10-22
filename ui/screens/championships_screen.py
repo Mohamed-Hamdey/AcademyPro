@@ -145,7 +145,7 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         super().showEvent(event)
         if self._dirty:
             self._dirty = False
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -248,7 +248,7 @@ class ChampionshipsScreen(ThemedWidget, QWidget):
         if self._active_chip is chip:
             return
         self._active_chip = chip
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _clear_cards(self):
         """Remove every card / section header, keeping the trailing stretch."""

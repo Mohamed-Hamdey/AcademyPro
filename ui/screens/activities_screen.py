@@ -9,7 +9,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QLabel,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt,QTimer
 from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -35,7 +35,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -246,7 +246,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
     def _on_add(self):
         dlg = ActivityFormDialog(parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_edit(self):
         a = self._selected()
@@ -254,7 +254,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
             return
         dlg = ActivityFormDialog(activity=a, parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_delete(self):
         a = self._selected()
@@ -271,7 +271,7 @@ class ActivitiesScreen(ThemedWidget, QWidget):
             warn(self, t("activities.confirm.title"), str(e))
             return
             
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_toggle_active(self):
         a = self._selected()
@@ -289,4 +289,4 @@ class ActivitiesScreen(ThemedWidget, QWidget):
             # Reactivate
             activity_service.reactivate(a.activity_id)
 
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)

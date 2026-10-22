@@ -61,7 +61,7 @@ class ExpensesScreen(ThemedWidget, QWidget):
 
     def _initial_load(self):
         try:
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception:
             self._loaded = False
             raise
@@ -197,7 +197,7 @@ class ExpensesScreen(ThemedWidget, QWidget):
         y, m = self._month_options[self.month_selector.currentIndex()]
         self._selected_year = y
         self._selected_month = m
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
 
     def refresh(self):
@@ -285,7 +285,7 @@ class ExpensesScreen(ThemedWidget, QWidget):
     def _on_add(self):
         dlg = ExpenseFormDialog(parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
             # --- NEW AUDIT CALL ---
             # Note: If you can access the newly created expense ID from the 
             # dialog, add it to target_id. For now we just log the action.
@@ -308,7 +308,7 @@ class ExpensesScreen(ThemedWidget, QWidget):
             return
         dlg = ExpenseFormDialog(expense=e, parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
             # --- NEW AUDIT CALL ---
             try:
                 from services import audit_service
@@ -341,4 +341,4 @@ class ExpensesScreen(ThemedWidget, QWidget):
             )
         except Exception:
             pass
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)

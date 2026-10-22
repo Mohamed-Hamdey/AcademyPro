@@ -32,7 +32,7 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
         self.on_back = on_back
         self._rows = []
         self._build_ui()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
         self._init_theme()
 
     def _build_ui(self):
@@ -266,7 +266,7 @@ class ChampionshipDetailScreen(ThemedWidget, QWidget):
         """Refresh with paint updates frozen to avoid the white-flash bug."""
         self.setUpdatesEnabled(False)
         try:
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         finally:
             self.setUpdatesEnabled(True)
             self.update()

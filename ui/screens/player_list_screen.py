@@ -165,7 +165,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
     def _initial_load(self):
         try:
             self._reload_activity_tabs()  # <--- FIX: Restore the activity tabs on load
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception:
             self._loaded = False
             raise
@@ -445,7 +445,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
         s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
         s.setValue(_LAST_TAB_KEY, "" if activity_id is None else activity_id)
 
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     # ---------- search / filter handlers ----------
 
@@ -476,7 +476,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
             return
 
         self._update_reset_visibility()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _prompt_custom_sessions(self):
 
@@ -525,7 +525,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
                 widget.blockSignals(False)
 
         self._update_reset_visibility()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     # ---------- data load ----------
 
@@ -657,7 +657,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
             else Qt.SortOrder.DescendingOrder
         )
         self.table.horizontalHeader().setSortIndicator(column, order)
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _sort_key(self, row, col):
         player = row["player"]
@@ -892,4 +892,4 @@ class PlayerListScreen(ThemedWidget, QWidget):
         current.deleteLater()
         self._loaded = False
         self._reload_activity_tabs()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)

@@ -1220,3 +1220,103 @@ class ThemeToggleSwitch(ThemedWidget, QWidget):
                                         h / 2.0 + 2, h / 2.0 + 2)
         finally:
             painter.end()
+            
+            
+class LineChartWidget(QWidget, ThemedWidget):
+    """
+    A lightweight, painted line chart for weight history.
+    Dots are colored according to the belt at that measurement.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data = []
+        self._init_theme()
+
+    def set_data(self, data: list):
+        """Data is a list of dicts: {'date': str, 'weight': float, 'belt': str}"""
+        self._data = data
+        self.update()
+
+    def restyle(self):
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._data:
+            return
+
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            
+            tm = theme()
+            # Increase bottom padding to make room for the dates
+            pad_x = 40
+            pad_y_top = 30
+            pad_y_bottom = 50  
+            w = self.width() - pad_x * 2
+            h = self.height() - pad_y_top - pad_y_bottom
+            
+            # Find min/max for Y axis scaling
+            weights = [d["weight"] for d in self._data if d["weight"] is not None]
+            if not weights:
+                return
+            min_w, max_w = min(weights), max(weights)
+            if min_w == max_w:
+                min_w -= 1
+                max_w += 1
+
+            def get_pt(i, d):
+                x = pad_x + (i / max(1, len(self._data) - 1)) * w
+                y = pad_y_top + h - ((d["weight"] - min_w) / (max_w - min_w)) * h
+                return x, y
+
+            # 1. Draw line (Black/Text color)
+            painter.setPen(QPen(QColor(tm.color("text")), 2))
+            path = QPainterPath()
+            for i, d in enumerate(self._data):
+                if d["weight"] is None:
+                    continue
+                x, y = get_pt(i, d)
+                if i == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            painter.drawPath(path)
+
+            # 2. Draw dots (colored by belt)
+            belt_colors = {
+                "white": "#FFFFFF", "yellow": "#FCD34D", "orange": "#F97316",
+                "green": "#22C55E", "blue": "#3B82F6", "purple": "#A855F7",
+                "brown": "#78350F", "black": "#111827",
+            }
+            
+            # Setup font for date labels
+            font = QFont(self.font())
+            font.setPixelSize(10)
+            painter.setFont(font)
+
+            for i, d in enumerate(self._data):
+                if d["weight"] is None:
+                    continue
+                x, y = get_pt(i, d)
+                color = belt_colors.get((d.get("belt") or "white").lower(), "#94A3B8")
+                
+                # Draw Dot
+                painter.setPen(QPen(QColor(tm.color("surface")), 2))
+                painter.setBrush(QColor(color))
+                painter.drawEllipse(QPointF(x, y), 6, 6)
+                
+                # 3. Draw Date Label (only if we have a reasonable amount of space)
+                date_str = d.get("date", "")[:10] # Grab YYYY-MM-DD
+                if date_str:
+                    painter.setPen(QColor(tm.color("text_secondary")))
+                    # Center the text below the dot
+                    text_rect = QRectF(x - 40, y + 10, 80, 20)
+                    painter.drawText(
+                        text_rect, 
+                        Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, 
+                        date_str
+                    )
+                
+        finally:
+            painter.end()

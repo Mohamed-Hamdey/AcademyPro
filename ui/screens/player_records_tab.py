@@ -23,7 +23,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QComboBox,
     QFrame, QPushButton, QListWidget, QListWidgetItem,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt,QTimer
 from qtpy.QtGui import QColor
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -68,7 +68,7 @@ class PlayerRecordsTab(ThemedWidget, QWidget):
         self._events = []
 
         self._build_ui()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
         self._init_theme()
 
     # ---------- UI ----------
@@ -627,7 +627,7 @@ class PlayerRecordsTab(ThemedWidget, QWidget):
             if p:
                 audit_service.record("payment.delete", target_type="payment", target_id=payment_id, details={"amount": p.amount})
             payments_repo.delete(payment_id)
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception as e:
             warn(self, "Error", str(e))
 

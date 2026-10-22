@@ -136,8 +136,7 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         
         self.session_time_combo.currentIndexChanged.connect(self._on_session_time_changed)
 
-        form.addRow(_FieldLabel(t("dlg.player.session_time"), False, self), self.session_time_combo)
-        form.addRow(_FieldLabel("", False, self), self.custom_time_input)
+
         
         # ---- Photo row ----
         self.photo_label = QLabel(t("dlg.player.no_photo"), self)
@@ -156,6 +155,8 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         form.addRow(_FieldLabel(t("dlg.player.national_id_optional"), False, self), self.national_id_input)
         form.addRow(_FieldLabel(t("dlg.player.phone"), True, self), self.phone_input)
         form.addRow(_FieldLabel(t("dlg.player.dob"), False, self), self.dob_input)
+        form.addRow(_FieldLabel(t("dlg.player.session_time"), False, self), self.session_time_combo)
+        form.addRow(_FieldLabel("", False, self), self.custom_time_input)
         form.addRow(_FieldLabel(t("dlg.player.photo"), False, self), photo_row)
         root.addLayout(form)
 

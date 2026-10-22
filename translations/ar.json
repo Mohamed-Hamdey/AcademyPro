@@ -1098,7 +1098,17 @@
 "activities.dialog.name": "اسم النشاط",
 "activities.dialog.requires_belt": "هذا النشاط يستخدم الأحزمة",
 "activities.dialog.requires_weight": "هذا النشاط يتطلب تتبع الوزن",
-"activities.dialog.error.name_required": "اسم النشاط مطلوب."
+"activities.dialog.error.name_required": "اسم النشاط مطلوب.",
+"belt.white": "أبيض", "belt.yellow": "أصفر", "belt.orange": "برتقالي",
+"belt.green": "أخضر", "belt.blue": "أزرق", "belt.purple": "بنفسجي",
+"belt.brown": "بني", "belt.black": "أسود",
+"players.measurement.dialog_title": "تسجيل قياس جديد",
+"players.measurement.weight": "الوزن",
+"players.measurement.belt": "الحزام",
+"players.measurement.notes": "ملاحظات (اختياري)",
+"players.measurement.notes_placeholder": "مثال: بعد المسابقة",
+"players.measurement.record_btn": "تسجيل قياس",
+"players.measurement.history_title": "سجل الوزن والأحزمة"
 
 
 

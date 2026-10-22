@@ -1096,7 +1096,17 @@
 "activities.dialog.name": "Activity Name",
 "activities.dialog.requires_belt": "This activity uses belts",
 "activities.dialog.requires_weight": "This activity requires weight tracking",
-"activities.dialog.error.name_required": "Activity name is required."
+"activities.dialog.error.name_required": "Activity name is required.",
+"belt.white": "White", "belt.yellow": "Yellow", "belt.orange": "Orange",
+"belt.green": "Green", "belt.blue": "Blue", "belt.purple": "Purple",
+"belt.brown": "Brown", "belt.black": "Black",
+"players.measurement.dialog_title": "Record New Measurement",
+"players.measurement.weight": "Weight",
+"players.measurement.belt": "Belt Rank",
+"players.measurement.notes": "Notes (Optional)",
+"players.measurement.notes_placeholder": "e.g. After competition",
+"players.measurement.record_btn": "Record Measurement",
+"players.measurement.history_title": "Weight & Belt History"
 
 
 }

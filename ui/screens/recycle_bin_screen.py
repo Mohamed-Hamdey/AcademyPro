@@ -6,7 +6,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTabWidget, QTableWidgetItem, QDialog, QLineEdit,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt,QTimer
 
 from repositories import subscriptions_repo, players_repo
 from services import archive_service, activity_service
@@ -30,7 +30,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         super().showEvent(event)
         if self._dirty:
             self._dirty = False
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -326,7 +326,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         if aid is not None:
             from repositories import activities_repo
             activities_repo.restore(aid)
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
 
     def _render_champs(self, champs):
@@ -365,7 +365,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         try:
             from repositories import championships_repo
             championships_repo.restore_championship(cid)
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception as e:
             warn(self, t("recycle.err_title"), str(e))
 
@@ -382,7 +382,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             try:
                 from repositories import championships_repo
                 championships_repo.delete_championship(cid)
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
             except Exception as e:
                 warn(self, t("recycle.err_title"), str(e))
 
@@ -493,7 +493,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         if pid is not None:
             try:
                 archive_service.restore_player(pid)
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
             except Exception as e:
                 warn(self, t("recycle.err_title"), str(e))
 
@@ -522,7 +522,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             
         try:
             users_repo.restore_tombstoned(uid, new_username.strip(), t("users.restore.display_name"))
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception as e:
             warn(self, t("recycle.err_title"), str(e))
 
@@ -533,7 +533,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             if dlg.exec() == dlg.DialogCode.Accepted:
                 try:
                     archive_service.permanently_delete_player(pid)
-                    self.refresh()
+                    QTimer.singleShot(0, self.refresh)
                 except Exception as e:
                     warn(self, t("recycle.err_title"), str(e))
 
@@ -542,7 +542,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
         if sid is not None:
             try:
                 archive_service.restore_subscription(sid)
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
             except Exception as e:
                 warn(self, t("recycle.err_title"), str(e))
 
@@ -553,7 +553,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
             if dlg.exec() == dlg.DialogCode.Accepted:
                 try:
                     archive_service.permanently_delete_subscription(sid)
-                    self.refresh()
+                    QTimer.singleShot(0, self.refresh)
                 except Exception as e:
                     warn(self, t("recycle.err_title"), str(e))
 
@@ -574,7 +574,7 @@ class RecycleBinScreen(ThemedWidget, QWidget):
                      t("recycle.empty_done_body",
                           players=summary["players"],
                           subs=summary["subscriptions"]))
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
             except Exception as e:
                 warn(self, t("recycle.err_title"), str(e))
                 # Re-enable on error so the user can retry.

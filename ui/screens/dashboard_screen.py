@@ -75,7 +75,7 @@ class DashboardScreen(ThemedWidget, QWidget):
         # the final rendered state instead of intermediate layouts.
         self.setUpdatesEnabled(False)
         try:
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         finally:
             self.setUpdatesEnabled(True)
             self.update()
@@ -408,23 +408,23 @@ class DashboardScreen(ThemedWidget, QWidget):
     def _on_prev_day(self):
         self._selected_date -= timedelta(days=1)
         self._sync_date_input()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_next_day(self):
         self._selected_date += timedelta(days=1)
         self._sync_date_input()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_jump_today(self):
         self._selected_date = date.today()
         self._sync_date_input()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_date_changed(self, qd: QDate):
         new_date = date(qd.year(), qd.month(), qd.day())
         if new_date != self._selected_date:
             self._selected_date = new_date
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _sync_date_input(self):
         self.date_input.blockSignals(True)
@@ -817,7 +817,7 @@ class DashboardScreen(ThemedWidget, QWidget):
             return
         self._selected_date = target
         self._sync_date_input()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_chart_bar_clicked(self, key):
         try:
@@ -828,4 +828,4 @@ class DashboardScreen(ThemedWidget, QWidget):
             return
         self._selected_date = target
         self._sync_date_input()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)

@@ -81,7 +81,7 @@ class AuditScreen(ThemedWidget, QWidget):
             # Populate the filter dropdowns (actions + users) BEFORE
             # querying — otherwise they render empty on first open.
             self.reload_filter_options()
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
             self._update_reset_visibility()   # <-- add this
 
     def hideEvent(self, event):
@@ -437,7 +437,7 @@ class AuditScreen(ThemedWidget, QWidget):
                 widget.blockSignals(False)
 
         self._update_reset_visibility()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
         
         # ---------- filter state / reset visibility ----------
 
@@ -463,7 +463,7 @@ class AuditScreen(ThemedWidget, QWidget):
 
     def _on_filter_changed(self, *args):
         self._update_reset_visibility()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
     # ------------------------------------------------------------------
     # Export CSV
     # ------------------------------------------------------------------
@@ -540,7 +540,7 @@ class AuditScreen(ThemedWidget, QWidget):
             )
             # Force a full reload so the new single audit.clear row appears.
             self._dirty = True
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception as ex:
             warn(self, t("audit.clear.fail_title"), str(ex))
 

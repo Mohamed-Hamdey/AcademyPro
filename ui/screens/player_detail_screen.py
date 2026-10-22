@@ -15,7 +15,7 @@ from qtpy.QtWidgets import (
     QTableWidgetItem, QTextEdit, QTabWidget, QFileDialog,
     QScrollArea, QFrame,
 )
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt,QTimer
 from qtpy.QtGui import QColor
 from ui.table_helpers import make_standard_table
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -27,8 +27,11 @@ from ui.cards.player_card import PlayerCardWidget
 from ui.dialogs.player_form_dialog import PlayerFormDialog
 from ui.dialogs.subscription_form_dialog import SubscriptionFormDialog
 from ui.dialogs.update_payment_dialog import UpdatePaymentDialog
+from ui.dialogs.record_measurement_dialog import RecordMeasurementDialog
+from services import player_service
+
 from logic.qr_utils import generate_qr_for_player
-from ui.components import SectionCard
+from ui.components import SectionCard, LineChartWidget
 from ui.theme import theme, ThemedWidget, make_danger, make_secondary, make_warning
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
@@ -44,7 +47,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self._active_subs = []
         self._build_ui()
         self._init_theme()
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
 
     # ---------- UI ----------
@@ -134,6 +137,9 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         card_buttons.addStretch()
         card_row.addLayout(card_buttons)
         ov.addLayout(card_row)
+        
+        
+
 
         # ===== Championships tab (scrollable) =====
         champ_scroll = QScrollArea()
@@ -172,6 +178,8 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         champ_scroll.setWidget(champ_widget)
         # (Tab is added later — after Overview and Attendance — so the
         # tab order is: Overview → Attendance → Championships → Records.)
+        
+        
         # Subscriptions card
         self.sub_card = SectionCard(title=t("detail.sub.group"))
 
@@ -245,6 +253,26 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         self.sub_card.setMinimumHeight(260)
         ov.addWidget(self.sub_card)
+
+        # ===== Measurement History (Weight & Belt Graph) =====
+        self.measurement_card = SectionCard(title=t("players.measurement.history_title"))
+        
+        # Chart widget
+        self.weight_chart = LineChartWidget()
+        self.weight_chart.setMinimumHeight(220) # Give it room to breathe
+        self.measurement_card.body.addWidget(self.weight_chart)
+
+        # Action button
+        record_measurement_btn = QPushButton(t("players.measurement.record_btn"))
+        make_secondary(record_measurement_btn)
+        record_measurement_btn.clicked.connect(self._on_record_measurement)
+        
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(record_measurement_btn)
+        self.measurement_card.body.addLayout(btn_row)
+
+        ov.addWidget(self.measurement_card)
 
         # Notes card
         self.notes_card = SectionCard(title=t("detail.notes.group"))
@@ -376,6 +404,20 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         self.player_card.display_player(
             player, most_recent, check_in_state=None, display=display,
         )
+        
+        # Load measurement history
+        measurements = players_repo.get_measurements(self.player_id)
+        
+        # The chart expects 'weight', but the DB column is 'weight_kg'
+        # We map it here so the chart widget doesn't need to know the DB schema.
+        chart_data = []
+        for m in measurements:
+            chart_data.append({
+                "date": m["recorded_at"],
+                "weight": m["weight_kg"],
+                "belt": m["belt"]
+            })
+        self.weight_chart.set_data(chart_data)
         self._render_sub_table()
 
         self.notes_input.setPlainText(player.notes or "")
@@ -488,7 +530,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
 
         dlg = EditSubscriptionDialog(fresh, parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_delete_subscription(self):
         """Move the selected subscription to the recycle bin."""
@@ -519,7 +561,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             )
             return
 
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _load_attendance(self):
         rows = attendance_service.get_for_player(self.player_id)
@@ -611,12 +653,33 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
     def _on_edit_player(self):
         dialog = PlayerFormDialog(self.current_player, parent=self)
         if dialog.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
+
+    def _on_record_measurement(self):
+        # Pass the current weight and belt as defaults to the dialog
+        current_weight = self.current_player.weight_kg or 0.0
+        current_belt = self.current_player.belt or "white"
+        
+        dlg = RecordMeasurementDialog(current_weight, current_belt, parent=self)
+        if dlg.exec():
+            weight, belt, notes = dlg.get_values()
+            
+            # Save to DB (this also updates the player's current profile)
+            player_service.record_measurement(
+                self.player_id, 
+                weight_kg=weight, 
+                belt=belt, 
+                notes=notes
+            )
+            
+            # Refresh the screen to update the chart and player card
+            QTimer.singleShot(0, self.refresh)
+
 
     def _on_activate_subscription(self):
         dialog = SubscriptionFormDialog(self.player_id, parent=self)
         if dialog.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_suspend_subscription(self):
         sub = self._selected_sub()
@@ -633,13 +696,13 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
                     target_type="subscription",
                     target_id=sub.subscription_id
                 )
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
         else:
             # Suspend
             if ask(self, t("detail.msg.suspend_title"), t("detail.msg.suspend_body")):
                 # subscription_service.suspend() already records the audit log internally.
                 subscription_service.suspend(sub.subscription_id)
-                self.refresh()
+                QTimer.singleShot(0, self.refresh)
     def _on_record_payment(self):
         sub = self._selected_sub()
         if sub is None:
@@ -655,7 +718,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
                 amount=amount,
                 payment_date=payment_date.isoformat(),
             )
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_export_qr(self):
         if not self.current_player.qr_code_path or not os.path.exists(self.current_player.qr_code_path):
@@ -684,7 +747,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
             audit_service.attendance_undone(
                 log_id=entry.log_id, player_id=self.player_id
             )
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         else:
             warn(self, t("detail.att.undo_failed_title"), t("detail.att.undo_failed_msg"))
 
@@ -733,7 +796,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         if outcome.checked_in:
             audit_service.manual_checkin(player_id=self.player_id)
 
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_reissue_qr(self):
         if not ask(self, t("detail.msg.reissue_qr_title"), t("detail.msg.reissue_qr_body")):
@@ -747,7 +810,7 @@ class PlayerDetailScreen(ThemedWidget, QWidget):
         )
         info(self, t("detail.msg.reissue_qr_done_title"),
              t("detail.msg.reissue_qr_done_msg", path=path))
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
 
     def _on_save_notes(self):
         self.current_player.notes = self.notes_input.toPlainText().strip() or None

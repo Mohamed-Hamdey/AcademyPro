@@ -88,7 +88,7 @@ class UsersScreen(ThemedWidget, QWidget):
         super().showEvent(event)
         if not self._loaded:
             self._loaded = True
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -311,14 +311,14 @@ class UsersScreen(ThemedWidget, QWidget):
                 target_id=user.user_id, 
                 details={"username": user.username}
             )
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
         except Exception as e:
             warn(self, t("users.error.delete_failed_title"), str(e))
 
     def _on_add(self):
         dlg = UserFormDialog(parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_row_double_clicked(self, row: int, column: int):
         self._on_edit()
@@ -336,7 +336,7 @@ class UsersScreen(ThemedWidget, QWidget):
 
         dlg = UserFormDialog(user=user, is_last_manager=is_last_manager, parent=self)
         if dlg.exec():
-            self.refresh()
+            QTimer.singleShot(0, self.refresh)
 
     def _on_change_password(self):
         user = self._selected_user()
@@ -365,4 +365,4 @@ class UsersScreen(ThemedWidget, QWidget):
             return
 
         users_repo.set_active(user.user_id, target_state)
-        self.refresh()
+        QTimer.singleShot(0, self.refresh)
