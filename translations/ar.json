@@ -1086,7 +1086,11 @@
 "champ.assign.btn": "تعيين ({n})",
 "champ.assign.weight_suffix": " كجم",
 "checkin.search.required": "الرجاء كتابة اسم أو رقم للبحث.",
-"champ.confirm.delete_champ_msg": "هل أنت متأكد من حذف «{name}»؟ سيتم حذف كل نتائج اللاعبين نهائياً."
+"champ.confirm.delete_champ_msg": "هل أنت متأكد من حذف «{name}»؟ سيتم حذف كل نتائج اللاعبين نهائياً.",
+"players.filter.custom_sessions": "عدد حصص مخصص...",
+"players.filter.custom_sessions_title": "تصفية بعدد الحصص",
+"players.filter.custom_sessions_prompt": "أدخل عدد الحصص للتصفية:",
+"msg.ok": "موافق"
 
 
 

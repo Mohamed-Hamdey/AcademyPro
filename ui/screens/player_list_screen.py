@@ -19,7 +19,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QStackedWidget,
     QComboBox, QLabel, QFrame, QSizePolicy, QAbstractItemView,
-    QMenu, QButtonGroup, QScrollArea, QStyledItemDelegate,
+    QMenu, QButtonGroup, QScrollArea, QStyledItemDelegate,QDialog
 )
 from qtpy.QtCore import Qt, QSettings, QSize, QRectF, QModelIndex, QTimer
 from qtpy.QtGui import QColor, QPainter, QFont, QFontMetrics, QBrush, QPen, QIcon
@@ -205,6 +205,12 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self.plan_filter.addItem(t("players.filter.all_plans"), None)
         for key, plan in config["plans"].items():
             self.plan_filter.addItem(get_plan_label(key), key)
+        # Separator + custom session count entry.
+        self.plan_filter.insertSeparator(self.plan_filter.count())
+        self.plan_filter.addItem(
+            "🔢  " + t("players.filter.custom_sessions"),
+            "__custom_sessions__",
+        )
         self.plan_filter.currentIndexChanged.connect(self._on_filter_changed)
 
         self.status_filter = QComboBox()
@@ -432,6 +438,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
         pass
 
     def _has_active_filters(self) -> bool:
+        """True if any filter differs from its default."""
         if self.search_input.text().strip():
             return True
         if self.plan_filter.currentData() is not None:
@@ -446,8 +453,33 @@ class PlayerListScreen(ThemedWidget, QWidget):
         self.reset_button.setVisible(self._has_active_filters())
 
     def _on_filter_changed(self, *args):
+        # If the user picked "Custom Sessions...", ask for a number first.
+        if self.plan_filter.currentData() == "__custom_sessions__":
+            self._prompt_custom_sessions()
+            return
+
         self._update_reset_visibility()
         self.refresh()
+
+    def _prompt_custom_sessions(self):
+
+        from ui.dialogs.custom_sessions_dialog import CustomSessionsDialog
+
+        default_val = getattr(self, "_custom_sessions", 8)
+
+        dlg = CustomSessionsDialog(self, default_count=default_val)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._custom_sessions = dlg.get_value()
+            self._update_reset_visibility()
+            # Defer the refresh so the dialog's close-frame fully paints
+            # before we rebuild the table (prevents the white flash).
+            QTimer.singleShot(0, self.refresh)
+        else:
+            # Cancel — revert combo box without looping.
+            self.plan_filter.blockSignals(True)
+            self.plan_filter.setCurrentIndex(0)
+            self.plan_filter.blockSignals(False)
+            self._update_reset_visibility()
 
     def _reset_filters(self):
         try:
@@ -467,6 +499,8 @@ class PlayerListScreen(ThemedWidget, QWidget):
             self.search_input.clear()
             self.plan_filter.setCurrentIndex(0)
             self.status_filter.setCurrentIndex(0)
+            # Clear any stored custom session count.
+            self._custom_sessions = None
         finally:
             for widget in widgets:
                 widget.blockSignals(False)
@@ -519,21 +553,39 @@ class PlayerListScreen(ThemedWidget, QWidget):
         filtered = []
         for row in rows:
             if plan_filter is not None:
-                want_plan = str(plan_filter).strip()
-                has_plan = False
-                for sub in row.get("subscriptions", []):
-                    sub_plan = str(sub.plan_type).strip() if sub.plan_type else ""
-                    if sub_plan == want_plan:
-                        has_plan = True
-                        break
-                
-                if not has_plan and not row.get("subscriptions"):
-                    row_plan = str(row.get("plan_label") or "").strip()
-                    if row_plan == want_plan:
-                        has_plan = True
-                
-                if not has_plan:
-                    continue
+                if plan_filter == "__custom_sessions__":
+                    # Custom sessions filter — match by sessions_total count.
+                    # A player passes if ANY of their active subs has
+                    # sessions_total == self._custom_sessions.
+                    want_count = getattr(self, "_custom_sessions", 0)
+                    has_match = False
+                    for sub in row.get("subscriptions", []):
+                        if sub.sessions_total == want_count:
+                            has_match = True
+                            break
+                    if not has_match:
+                        # Fallback: check the collapsed plan_label.
+                        if not row.get("subscriptions") and row.get("sessions_total") == want_count:
+                            has_match = True
+                    if not has_match:
+                        continue
+                else:
+                    # Named plan filter — match by plan_type key.
+                    want_plan = str(plan_filter).strip()
+                    has_plan = False
+                    for sub in row.get("subscriptions", []):
+                        sub_plan = str(sub.plan_type).strip() if sub.plan_type else ""
+                        if sub_plan == want_plan:
+                            has_plan = True
+                            break
+
+                    if not has_plan and not row.get("subscriptions"):
+                        row_plan = str(row.get("plan_label") or "").strip()
+                        if row_plan == want_plan:
+                            has_plan = True
+
+                    if not has_plan:
+                        continue
 
             if status_filter and row["status"] != status_filter:
                 continue
@@ -783,11 +835,12 @@ class PlayerListScreen(ThemedWidget, QWidget):
     # ---------- actions ----------
 
     def _on_add_player(self):
+  
         dialog = PlayerFormDialog(parent=self)
         if dialog.exec():
             self._loaded = False
-            self._reload_activity_tabs()
-            self.refresh()
+            QTimer.singleShot(0, self._reload_activity_tabs)
+            QTimer.singleShot(0, self.refresh)
             qr_path = getattr(dialog, "newly_created_qr_path", None)
             if qr_path:
                 name = dialog.name_input.text().strip()

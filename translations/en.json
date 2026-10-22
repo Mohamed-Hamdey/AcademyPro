@@ -1084,7 +1084,11 @@
 "checkin.search.required": "Please type a name or ID to search.",
 "champ.confirm.delete_champ_msg": "Are you sure you want to delete «{name}»? All player results will be permanently lost.",
 "champ.empty.no_results": "No championships match your search.",
-"champ.empty.clear": "Clear Search"
+"champ.empty.clear": "Clear Search",
+"players.filter.custom_sessions": "Custom Sessions...",
+"players.filter.custom_sessions_title": "Custom Sessions Filter",
+"msg.ok": "OK",
+"players.filter.custom_sessions_prompt": "Enter the number of sessions to filter by:"
 
 
 }
