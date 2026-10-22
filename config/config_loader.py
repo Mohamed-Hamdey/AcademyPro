@@ -29,12 +29,7 @@ def get_plan(plan_type: str) -> dict:
     return plan
 
 
-def get_group(group_key: str) -> dict:
-    config = load_config()
-    group = config["groups"].get(group_key)
-    if group is None:
-        raise ValueError(f"Unknown group: {group_key!r}")
-    return group
+
 
 
 def get_academy_name() -> str:
@@ -66,8 +61,14 @@ def get_plan_label(plan_type: str) -> str:
     return plan["label"]
 
 
+def get_group(group_key: str) -> dict:
+    config = load_config()
+    group = config.get("session_times", {}).get(group_key)
+    if group is None:
+        raise ValueError(f"Unknown session time: {group_key!r}")
+    return group
+
 def get_group_label(group_key: str) -> str:
-    """Localized group label."""
     from ui import i18n
     group = get_group(group_key)
     if i18n.current_language() == "ar" and "label_ar" in group:

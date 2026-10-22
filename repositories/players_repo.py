@@ -19,14 +19,14 @@ def create(player: Player) -> int:
             """
             INSERT INTO players
                 (full_name, national_id, phone, dob, photo_path,
-                 qr_code_path, status, notes, belt, weight_kg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 qr_code_path, status, notes, belt, weight_kg, session_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 player.full_name, player.national_id, player.phone, player.dob,
                 player.photo_path, player.qr_code_path,
                 player.status, player.notes,
-                player.belt, player.weight_kg, # <--- NEW
+                player.belt, player.weight_kg, player.session_time, # <--- NEW
             ),
         )
         conn.commit()
@@ -183,14 +183,14 @@ def update(player: Player) -> None:
             UPDATE players
             SET full_name = ?, national_id = ?, phone = ?, dob = ?,
                 photo_path = ?, qr_code_path = ?, status = ?, notes = ?,
-                belt = ?, weight_kg = ? # <--- NEW
+                belt = ?, weight_kg = ?, session_time = ?
             WHERE player_id = ?
             """,
             (
                 player.full_name, player.national_id, player.phone, player.dob,
                 player.photo_path, player.qr_code_path,
                 player.status, player.notes,
-                player.belt, player.weight_kg, # <--- NEW
+                player.belt, player.weight_kg, player.session_time, # <--- NEW
                 player.player_id,
             ),
         )
@@ -537,5 +537,38 @@ def list_activity_counts() -> dict[int, int]:
             """,
         ).fetchall()
         return {r["activity_id"]: r["cnt"] for r in rows}
+    finally:
+        conn.close()
+        
+        
+# ---------------------------------------------------------------------------
+# Player Measurements
+# ---------------------------------------------------------------------------
+
+def add_measurement(player_id: int, recorded_at: str, weight_kg: float, belt: str, notes: str = None) -> int:
+    """Record a new measurement in history."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO player_measurements (player_id, recorded_at, weight_kg, belt, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (player_id, recorded_at, weight_kg, belt, notes),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+def get_measurements(player_id: int) -> list[dict]:
+    """Fetch all measurements for a player, ordered oldest to newest."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM player_measurements WHERE player_id = ? ORDER BY recorded_at ASC",
+            (player_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()

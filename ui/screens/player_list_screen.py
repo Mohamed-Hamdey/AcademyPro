@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (
 )
 from qtpy.QtCore import Qt, QSettings, QSize, QRectF, QModelIndex, QTimer
 from qtpy.QtGui import QColor, QPainter, QFont, QFontMetrics, QBrush, QPen, QIcon
+from ui import i18n
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config.config_loader import load_config, get_plan_label
@@ -288,6 +289,20 @@ class PlayerListScreen(ThemedWidget, QWidget):
             summary_layout.addWidget(box, stretch=1)
         page_layout.addWidget(self.summary_widget)
 
+        self.time_filter = QComboBox()
+        self.time_filter.addItem(t("players.filter.all_times"), None)
+        for time_val, time_info in config.get("session_times", {}).items():
+            label = time_info.get("label_ar") if i18n.current_language() == "ar" else time_info.get("label")
+            self.time_filter.addItem(label, time_val)
+        self.time_filter.currentIndexChanged.connect(self._on_filter_changed)
+
+        # Update toolbar additions:
+        self.toolbar.add_leading(self.search_input, stretch=1)
+        self.toolbar.add_leading(self.plan_filter)
+        self.toolbar.add_leading(self.status_filter)
+        self.toolbar.add_leading(self.time_filter) # <--- NEW
+        self.toolbar.add_trailing(self.add_button)
+
         # ---- Table ----
         self.table_card = QFrame()
         self.table_card.setObjectName("playerTableCard")
@@ -445,6 +460,8 @@ class PlayerListScreen(ThemedWidget, QWidget):
             return True
         if self.status_filter.currentData() is not None:
             return True
+        if self.time_filter.currentData() is not None:
+            return True
         return False
 
     def _update_reset_visibility(self):
@@ -491,6 +508,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
             self.search_input,
             self.plan_filter,
             self.status_filter,
+            self.time_filter,
         )
         for widget in widgets:
             widget.blockSignals(True)
@@ -499,6 +517,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
             self.search_input.clear()
             self.plan_filter.setCurrentIndex(0)
             self.status_filter.setCurrentIndex(0)
+            self.time_filter.setCurrentIndex(0)
             # Clear any stored custom session count.
             self._custom_sessions = None
         finally:
@@ -549,7 +568,7 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
         plan_filter = self.plan_filter.currentData()
         status_filter = self.status_filter.currentData()
-
+        time_filter = self.time_filter.currentData()
         filtered = []
         for row in rows:
             if plan_filter is not None:
@@ -589,6 +608,10 @@ class PlayerListScreen(ThemedWidget, QWidget):
 
             if status_filter and row["status"] != status_filter:
                 continue
+            filtered.append(row)
+            if time_filter is not None and row["player"].session_time != time_filter: # <--- NEW
+                continue
+            
             filtered.append(row)
             
         if self._sort_col < 0:

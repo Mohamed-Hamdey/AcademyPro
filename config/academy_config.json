@@ -25,10 +25,10 @@
     }
   },
 
-  "groups": {
-    "small": { "label": "Small players", "label_ar": "المجموعة الصغيرة", "time": "18:00" },
-    "large": { "label": "Larger players", "label_ar": "المجموعة الكبيرة", "time": "19:30" },
-    "last":  { "label": "Last group", "label_ar": "المجموعة الأخيرة", "time": "21:00" }
+  "session_times": {
+      "18:00": { "label": "6:00 PM", "label_ar": "٦:٠٠ مساءً" },
+      "19:30": { "label": "7:30 PM", "label_ar": "٧:٣٠ مساءً" },
+      "21:00": { "label": "9:00 PM", "label_ar": "٩:٠٠ مساءً" }
   },
 
   "expiry_policy": "thirty_days_from_payment",

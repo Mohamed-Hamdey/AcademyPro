@@ -12,9 +12,9 @@ import logging
 from qtpy.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QComboBox,
     QDateEdit, QPushButton, QHBoxLayout, QFileDialog, QLabel,
-    QWidget, QFrame,
+    QWidget, QFrame,QTimeEdit
 )
-from qtpy.QtCore import Qt, QDate
+from qtpy.QtCore import Qt, QDate,QTime
 
 from ui.message_box import warn, error
 from services import audit_service
@@ -26,6 +26,7 @@ from logic.qr_utils import generate_qr_for_player
 from ui.theme import theme, ThemedWidget, make_secondary
 from ui.design import SPACING, RADIUS
 from ui.i18n import t
+from ui import i18n
 
 
 def _col(name: str, fallback_token: str, default: str) -> str:
@@ -116,7 +117,28 @@ class PlayerFormDialog(ThemedWidget, QDialog):
         self.dob_input.setCalendarPopup(True)
         self.dob_input.setDisplayFormat("yyyy-MM-dd")
         self.dob_input.setDate(QDate(2015, 1, 1))
+        
+        # ---- Preferred Session Time ----
+        self.session_time_combo = QComboBox(self)
+        self.session_time_combo.addItem(t("dlg.player.session_time_none"), None)
+        
+        cfg = load_config()
+        for time_val, time_info in cfg.get("session_times", {}).items():
+            label = time_info.get("label_ar") if i18n.current_language() == "ar" else time_info.get("label")
+            self.session_time_combo.addItem(label, time_val)
+            
+        self.session_time_combo.addItem(t("dlg.player.session_time_custom"), "__custom__")
+        
+        self.custom_time_input = QTimeEdit(self)
+        self.custom_time_input.setDisplayFormat("HH:mm")
+        self.custom_time_input.setTime(QTime(18, 0)) # default 6 PM
+        self.custom_time_input.hide() # hidden by default
+        
+        self.session_time_combo.currentIndexChanged.connect(self._on_session_time_changed)
 
+        form.addRow(_FieldLabel(t("dlg.player.session_time"), False, self), self.session_time_combo)
+        form.addRow(_FieldLabel("", False, self), self.custom_time_input)
+        
         # ---- Photo row ----
         self.photo_label = QLabel(t("dlg.player.no_photo"), self)
         photo_button = QPushButton(t("dlg.player.choose_photo"), self)
@@ -206,7 +228,25 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             pass
         if player.photo_path:
             self.photo_label.setText(os.path.basename(player.photo_path))
+            
+        # Handle session time loading
+        if player.session_time:
+            idx = self.session_time_combo.findData(player.session_time)
+            if idx >= 0:
+                self.session_time_combo.setCurrentIndex(idx)
+            else:
+                # It's a custom time
+                idx = self.session_time_combo.findData("__custom__")
+                self.session_time_combo.setCurrentIndex(idx)
+                parts = player.session_time.split(":")
+                if len(parts) == 2:
+                    self.custom_time_input.setTime(QTime(int(parts[0]), int(parts[1])))
+        else:
+            self.session_time_combo.setCurrentIndex(0)
 
+    def _on_session_time_changed(self, _idx):
+        is_custom = self.session_time_combo.currentData() == "__custom__"
+        self.custom_time_input.setVisible(is_custom)
     # ---------- photo ----------
 
     def _choose_photo(self):
@@ -271,7 +311,14 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             stored_photo_path = self.editing_player.photo_path
         else:
             stored_photo_path = self._persist_photo(self._selected_photo_path)
-
+            
+        # Determine session time
+        session_time = self.session_time_combo.currentData()
+        if session_time == "__custom__":
+            session_time = self.custom_time_input.time().toString("HH:mm")
+        elif session_time is None:
+            session_time = None
+            
         # ---- Edit mode ----
         if self.editing_player:
             self.editing_player.full_name = name
@@ -279,6 +326,7 @@ class PlayerFormDialog(ThemedWidget, QDialog):
             self.editing_player.phone = phone
             self.editing_player.dob = dob
             self.editing_player.photo_path = stored_photo_path
+            self.editing_player.session_time = session_time
             try:
                 players_repo.update(self.editing_player)
                 audit_service.player_updated(
@@ -289,6 +337,8 @@ class PlayerFormDialog(ThemedWidget, QDialog):
                 self._show_error(str(e))
                 return
             self.saved_player_id = self.editing_player.player_id
+            
+
 
         # ---- Create mode ----
         else:
@@ -300,6 +350,7 @@ class PlayerFormDialog(ThemedWidget, QDialog):
                 dob=dob,
                 photo_path=stored_photo_path,
                 qr_code_path=None,
+                session_time=session_time,
             )
             try:
                 self.saved_player_id = players_repo.create(new_player)
