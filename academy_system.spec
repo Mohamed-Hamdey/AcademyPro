@@ -1,16 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for the Academy Membership System.
+PyInstaller spec for AcademyPro.
 
 Build with:
     python -m PyInstaller --clean --noconfirm academy_system.spec
 
-Output: dist/AcademySystem/AcademySystem.exe (one-folder build).
+Output: dist/AcademyPro/AcademyPro.exe (one-folder build).
 The folder is what the Inno Setup installer packages.
-
-One-folder (not one-file) is a deliberate choice: a one-file build
-self-extracts to a temp dir on every launch, which adds 3-8 seconds
-to startup. One-folder launches in under a second after the first run.
 """
 
 import os
@@ -19,33 +15,16 @@ from PyInstaller.utils.hooks import collect_submodules
 block_cipher = None
 project_root = os.path.abspath(os.path.dirname(SPEC))
 
-
-# ---------------------------------------------------------------------------
-# Data files: read-only resources bundled INTO the app folder
-# ---------------------------------------------------------------------------
 datas = [
     (os.path.join(project_root, "config", "academy_config.json"), "config"),
     (os.path.join(project_root, "translations"), "translations"),
     (os.path.join(project_root, "assets", "logo"), os.path.join("assets", "logo")),
-    # Public key for license verification (private key never ships)
     (os.path.join(project_root, "license", "keys", "public_key.pem"),
      os.path.join("license", "keys")),
-    # Third-party license notices (viewed from the About dialog)
     (os.path.join(project_root, "LICENSES.txt"), "."),
-    # Migration files — the runner discovers them dynamically via
-    # os.listdir(), so they must exist on disk (not just as compiled
-    # modules) inside the frozen build.
     (os.path.join(project_root, "migrations"), "migrations"),
 ]
 
-# ---------------------------------------------------------------------------
-# Binaries: libzbar-64.dll required by pyzbar at runtime
-#
-# You must download it manually once and place it next to this .spec file
-# at:  libzbar-64.dll
-# Source: https://github.com/NaturalHistoryMuseum/pyzbar/issues/77#issuecomment-1133555141
-#   or any Windows build of zbar's shared library.
-# ---------------------------------------------------------------------------
 binaries = []
 _libzbar = os.path.join(project_root, "libzbar-64.dll")
 if os.path.exists(_libzbar):
@@ -56,32 +35,19 @@ if os.path.exists(_libiconv):
 else:
     print("WARNING: libzbar-64.dll not found next to academy_system.spec.")
     print("         The built .exe will crash on the first QR scan.")
-    print("         Download it from the pyzbar README and place it in the project root.")
 
-
-# ---------------------------------------------------------------------------
-# Hidden imports — modules that PyInstaller's static analyzer can't see
-# ---------------------------------------------------------------------------
 hiddenimports = [
-    # QR scanning
     "pyzbar.pyzbar",
-
-    # Qt modules that PySide6 loads lazily. PyInstaller's built-in
-    # PySide6 hook catches most of these, but listing them explicitly
-    # avoids "module not found" surprises on some machines.
     "PySide6.QtCore",
     "PySide6.QtGui",
     "PySide6.QtWidgets",
     "PySide6.QtSvg",
     "PySide6.QtPrintSupport",
-    "PySide6.QtNetwork",   # single-instance lock (QLocalServer)
-
-    # License verification
+    "PySide6.QtNetwork",
     "cryptography",
     "cryptography.hazmat.primitives.asymmetric.ed25519",
     "cryptography.hazmat.primitives.serialization",
 ]
-
 hiddenimports += collect_submodules("pyzbar")
 
 
@@ -95,50 +61,14 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Development / testing
-        "tkinter",
-        "pytest",
-        "_pytest",
-        "numpy.testing",
-
-        # GUI libraries we don't use
-        "matplotlib",
-        "IPython",
-        "jupyter",
-        "notebook",
-        "PyQt5",
-        "PyQt5.QtCore",
-        "PyQt5.QtGui",
-        "PyQt5.QtWidgets",
-        "PyQt5.QtSvg",
-        "PyQt5.sip",
-        "PyQt6",
-        "PyQt6.QtCore",
-        "PyQt6.QtGui",
-        "PyQt6.QtWidgets",
-        "PyQt6.QtSvg",
-        "PyQt6.sip",
-
-        # Scientific / ML libraries Anaconda ships that we don't use
-        "tensorflow",
-        "torch",
-        "torchvision",
-        "keras",
-        "sklearn",
-        "scipy",
-        "pandas",
-        "numba",
-        "sympy",
-        "astropy",
-        "erfa",
-        "h5py",
-        "sqlalchemy",
-        "bokeh",
-        "dask",
-        "distributed",
-        "xarray",
-        "statsmodels",
-        "seaborn",
+        "tkinter", "pytest", "_pytest", "numpy.testing",
+        "matplotlib", "IPython", "jupyter", "notebook",
+        "PyQt5", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets", "PyQt5.QtSvg", "PyQt5.sip",
+        "PyQt6", "PyQt6.QtCore", "PyQt6.QtGui", "PyQt6.QtWidgets", "PyQt6.QtSvg", "PyQt6.sip",
+        "tensorflow", "torch", "torchvision", "keras", "sklearn", "scipy",
+        "pandas", "numba", "sympy", "astropy", "erfa", "h5py",
+        "sqlalchemy", "bokeh", "dask", "distributed", "xarray",
+        "statsmodels", "seaborn",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -148,13 +78,12 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
-    name="AcademySystem",
+    name="AcademyPro",              # <-- changed from AcademySystem
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -167,9 +96,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(
-        project_root, "assets", "logo", "logo.ico"
-    ),
+    icon=os.path.join(project_root, "assets", "logo", "logo.ico"),
 )
 
 coll = COLLECT(
@@ -180,5 +107,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="AcademySystem",
+    name="AcademyPro",              # <-- changed from AcademySystem
 )

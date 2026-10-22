@@ -5,8 +5,7 @@
     "notes": "Modern Standard Arabic. Player IDs, dates, and times stay in Latin script."
   },
 
-  "app.window_title": "أكاديمية الأبطال (ك/أحمد مصطفي) — نظام العضوية",
-
+"app.window_title": "أكاديمي برو — نظام إدارة الأكاديميات الرياضية",
   "nav.check_in": "تسجيل الحضور",
   "nav.manage_players": "إدارة اللاعبين",
 

@@ -1,22 +1,25 @@
 ; ============================================================================
-;  Academy System — Inno Setup installer script
+;  AcademyPro — Inno Setup installer script
 ;
-;  Wraps the PyInstaller-built AcademySystem.exe into a full Windows
+;  Wraps the PyInstaller-built AcademyPro.exe into a full Windows
 ;  installer with Start Menu entry, desktop icon, and uninstaller.
 ;
 ;  Build:
-;    1. Ensure dist\AcademySystem.exe exists (run build.bat first)
+;    1. Ensure dist\AcademyPro\AcademyPro.exe exists (run PyInstaller first)
 ;    2. Open this file in Inno Setup Compiler
 ;    3. Press F9 (or Build > Compile)
-;    4. The setup executable appears at:  dist_installer\AcademySystem_Setup.exe
+;    4. The setup executable appears at:  dist_installer\AcademyPro_Setup_v4.0.0.exe
 ; ============================================================================
 
-#define MyAppName "Academy System"
-#define MyAppNameAr "نظام العضوية"
-#define MyAppVersion "1.0.0"
-#define MyAppPublisher "AL-Abtal Kung Fu Academy"
-#define MyAppExeName "AcademySystem.exe"
+#define MyAppName "AcademyPro"
+#define MyAppNameAr "اكاديمي برو"
+#define MyAppVersion "4.0.0"
+#define MyAppPublisher "AcademyPro"
+#define MyAppExeName "AcademyPro.exe"
 #define MyAppDataDir "AcademySystem"
+; ^^^ CRITICAL: DO NOT CHANGE THIS. It matches the folder name used by
+;     paths.py for user data (%LOCALAPPDATA%\AcademySystem). Changing it
+;     would orphan every existing user's database on update.
 
 [Setup]
 ; ---- Identity ----
@@ -26,7 +29,6 @@ AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 VersionInfoVersion={#MyAppVersion}
-; ---- License agreement ----
 LicenseFile=installer\EULA.txt
 
 ; ---- Uninstall ----
@@ -36,6 +38,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; ---- Privileges ----
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
+
 ; ---- Install location ----
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
@@ -44,7 +47,7 @@ AllowNoIcons=yes
 
 ; ---- Output ----
 OutputDir=dist_installer
-OutputBaseFilename=AcademySystem_Setup
+OutputBaseFilename=AcademyPro_Setup_v{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -58,9 +61,6 @@ WizardStyle=modern
 DisableWelcomePage=no
 DisableDirPage=no
 DisableReadyPage=no
-
-
-
 
 
 [Languages]
@@ -84,37 +84,25 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startmenuicon"; Description: "Start Menu shortcut"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-; The main executable
-Source: "dist\AcademySystem\*"; DestDir: "{app}"; \
+Source: "dist\AcademyPro\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Documentation
 Source: "README.md";        DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "README_DEPLOY.md"; DestDir: "{app}"; Flags: ignoreversion
 
-; Optional: uncomment if you want to ship a license file
-; Source: "installer\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
-
 [Icons]
-; Start Menu
 Name: "{group}\{#MyAppName}";           Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{group}\Read me";                Filename: "{app}\README.md"
 
-; Desktop (optional task)
 Name: "{autodesktop}\{#MyAppName}";     Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; Offer to launch the app after install
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Do NOT delete user data automatically — we ask via code below.
 
 [Code]
-// ---------------------------------------------------------------------------
-// On uninstall: ask the user whether to keep or delete their data folder.
-// ---------------------------------------------------------------------------
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
@@ -129,7 +117,7 @@ begin
       Response := MsgBox(
         ExpandConstant('{cm:DeleteUserDataPrompt}'),
         mbConfirmation,
-        MB_YESNO or MB_DEFBUTTON2  // default = No (keep data)
+        MB_YESNO or MB_DEFBUTTON2
       );
 
       if Response = IDYES then
